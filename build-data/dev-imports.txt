@@ -9,4 +9,7 @@
 #     minecraft net.minecraft.world.level.entity.LevelEntityGetterAdapter
 minecraft net/minecraft/world/level/levelgen/LegacyRandomSource.java
 minecraft net/minecraft/util/ClassInstanceMultiMap.java
-minecraft net/minecraft/world/entity/ai/gossip/Reputation.java
+minecraft net/minecraft/world/level/pathfinder/BinaryHeap.java
+minecraft net/minecraft/world/level/pathfinder/FlyNodeEvaluator.java
+minecraft net/minecraft/world/level/pathfinder/NodeEvaluator.java
+minecraft net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java
