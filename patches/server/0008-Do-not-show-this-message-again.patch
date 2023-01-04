@@ -1,0 +1,107 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Wed, 4 Jan 2023 21:22:42 +0800
+Subject: [PATCH] Do not show this message again
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 96d9bf88c793eae29772071c6eeeac18ffed4a4e..4a470950f78a30e9200657eefac22f1f540affb4 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -1725,57 +1725,57 @@ public class ServerLevel extends Level implements WorldGenLevel {
+ 
+     @Override
+     public void sendBlockUpdated(BlockPos pos, BlockState oldState, BlockState newState, int flags) {
+-        if (this.isUpdatingNavigations) {
+-            if (Thread.currentThread() instanceof AnotherTickThread){
++        synchronized (this.navigatingMobs){
++            if (this.isUpdatingNavigations) {
+                 return;
++                //Util.logAndPauseIfInIde("recursive call to sendBlockUpdated", new IllegalStateException("recursive call to sendBlockUpdated"));
+             }
+-            Util.logAndPauseIfInIde("recursive call to sendBlockUpdated", new IllegalStateException("recursive call to sendBlockUpdated"));
+-        }
+ 
+-        this.getChunkSource().blockChanged(pos);
+-        if(this.paperConfig().misc.updatePathfindingOnBlockUpdate) { // Paper - option to disable pathfinding updates
+-            VoxelShape voxelshape = oldState.getCollisionShape(this, pos);
+-            VoxelShape voxelshape1 = newState.getCollisionShape(this, pos);
++            this.getChunkSource().blockChanged(pos);
++            if(this.paperConfig().misc.updatePathfindingOnBlockUpdate) { // Paper - option to disable pathfinding updates
++                VoxelShape voxelshape = oldState.getCollisionShape(this, pos);
++                VoxelShape voxelshape1 = newState.getCollisionShape(this, pos);
+ 
+-            if (Shapes.joinIsNotEmpty(voxelshape, voxelshape1, BooleanOp.NOT_SAME)) {
+-                List<PathNavigation> list = new ObjectArrayList();
+-                Iterator iterator = this.navigatingMobs.iterator();
++                if (Shapes.joinIsNotEmpty(voxelshape, voxelshape1, BooleanOp.NOT_SAME)) {
++                    List<PathNavigation> list = new ObjectArrayList();
++                    Iterator iterator = this.navigatingMobs.iterator();
+ 
+-                while (iterator.hasNext()) {
+-                    // CraftBukkit start - fix SPIGOT-6362
+-                    Mob entityinsentient;
+-                    try {
+-                        entityinsentient = (Mob) iterator.next();
+-                    } catch (java.util.ConcurrentModificationException ex) {
+-                        // This can happen because the pathfinder update below may trigger a chunk load, which in turn may cause more navigators to register
+-                        // In this case we just run the update again across all the iterators as the chunk will then be loaded
+-                        // As this is a relative edge case it is much faster than copying navigators (on either read or write)
+-                        this.sendBlockUpdated(pos, oldState, newState, flags);
+-                        return;
+-                    }
+-                    // CraftBukkit end
+-                    PathNavigation navigationabstract = entityinsentient.getNavigation();
++                    while (iterator.hasNext()) {
++                        // CraftBukkit start - fix SPIGOT-6362
++                        Mob entityinsentient;
++                        try {
++                            entityinsentient = (Mob) iterator.next();
++                        } catch (java.util.ConcurrentModificationException ex) {
++                            // This can happen because the pathfinder update below may trigger a chunk load, which in turn may cause more navigators to register
++                            // In this case we just run the update again across all the iterators as the chunk will then be loaded
++                            // As this is a relative edge case it is much faster than copying navigators (on either read or write)
++                            this.sendBlockUpdated(pos, oldState, newState, flags);
++                            return;
++                        }
++                        // CraftBukkit end
++                        PathNavigation navigationabstract = entityinsentient.getNavigation();
+ 
+-                    if (navigationabstract.shouldRecomputePath(pos)) {
+-                        list.add(navigationabstract);
++                        if (navigationabstract.shouldRecomputePath(pos)) {
++                            list.add(navigationabstract);
++                        }
+                     }
+-                }
+ 
+-                try {
+-                    this.isUpdatingNavigations = true;
+-                    iterator = list.iterator();
++                    try {
++                        this.isUpdatingNavigations = true;
++                        iterator = list.iterator();
+ 
+-                    while (iterator.hasNext()) {
+-                        PathNavigation navigationabstract1 = (PathNavigation) iterator.next();
++                        while (iterator.hasNext()) {
++                            PathNavigation navigationabstract1 = (PathNavigation) iterator.next();
+ 
+-                        navigationabstract1.recomputePath();
++                            navigationabstract1.recomputePath();
++                        }
++                    } finally {
++                        this.isUpdatingNavigations = false;
+                     }
+-                } finally {
+-                    this.isUpdatingNavigations = false;
+-                }
+ 
+-            }
+-        } // Paper
++                }
++            } // Paper
++        }
+     }
+ 
+     @Override
