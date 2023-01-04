@@ -27,8 +27,10 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-    - name: Build
-      run: bash gradlew applyPatches createReobfPaperclipJar
+    - name: Setup
+      run: bash gradlew applyPatches 
+    - name: Create paperclip jar
+      run: bash gradlew createReobfPaperclipJar
     - name: capture build artifacts
       uses: actions/upload-artifact@v2
       with:
