@@ -1,0 +1,205 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Wed, 4 Jan 2023 22:00:37 +0800
+Subject: [PATCH] Fix pathfinder
+
+
+diff --git a/src/main/java/net/minecraft/world/level/pathfinder/NodeEvaluator.java b/src/main/java/net/minecraft/world/level/pathfinder/NodeEvaluator.java
+index 7de3c41e036ddb91d951cefbd2ea093918150680..0aeff915b0518f64d291b6a4a538e0cd183535c5 100644
+--- a/src/main/java/net/minecraft/world/level/pathfinder/NodeEvaluator.java
++++ b/src/main/java/net/minecraft/world/level/pathfinder/NodeEvaluator.java
+@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+ import net.minecraft.core.BlockPos;
++import net.minecraft.server.MinecraftServer;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.Mob;
+ import net.minecraft.world.level.BlockGetter;
+@@ -31,8 +32,10 @@ public abstract class NodeEvaluator {
+     }
+ 
+     public void done() {
+-        this.level = null;
+-        this.mob = null;
++        MinecraftServer.getServer().asyncExecutor.submitCleanTask(()->{
++            this.level = null;
++            this.mob = null;
++        });
+     }
+ 
+     protected Node getNode(BlockPos pos) {
+diff --git a/src/main/java/net/minecraft/world/level/pathfinder/Path.java b/src/main/java/net/minecraft/world/level/pathfinder/Path.java
+index 2a335f277bd0e4b8ad0f60d8226eb8aaa80a871f..96765e6fe34ed5bce3ebe9859714d9bd805d7d22 100644
+--- a/src/main/java/net/minecraft/world/level/pathfinder/Path.java
++++ b/src/main/java/net/minecraft/world/level/pathfinder/Path.java
+@@ -21,7 +21,7 @@ public class Path {
+     private final BlockPos target;
+     private final float distToTarget;
+     private final boolean reached;
+-    public boolean hasNext() { return getNextNodeIndex() < this.nodes.size(); } // Paper
++    public synchronized boolean hasNext() { return getNextNodeIndex() < this.nodes.size(); } // Paper
+ 
+     public Path(List<Node> nodes, BlockPos target, boolean reachesTarget) {
+         this.nodes = nodes;
+@@ -30,51 +30,51 @@ public class Path {
+         this.reached = reachesTarget;
+     }
+ 
+-    public void advance() {
++    public synchronized void advance() {
+         ++this.nextNodeIndex;
+     }
+ 
+-    public boolean notStarted() {
++    public synchronized boolean notStarted() {
+         return this.nextNodeIndex <= 0;
+     }
+ 
+-    public boolean isDone() {
++    public synchronized boolean isDone() {
+         return this.nextNodeIndex >= this.nodes.size();
+     }
+ 
+     @Nullable
+-    public Node getEndNode() {
++    public synchronized Node getEndNode() {
+         return !this.nodes.isEmpty() ? this.nodes.get(this.nodes.size() - 1) : null;
+     }
+ 
+-    public Node getNode(int index) {
++    public synchronized Node getNode(int index) {
+         return this.nodes.get(index);
+     }
+ 
+-    public void truncateNodes(int length) {
++    public synchronized void truncateNodes(int length) {
+         if (this.nodes.size() > length) {
+             this.nodes.subList(length, this.nodes.size()).clear();
+         }
+ 
+     }
+ 
+-    public void replaceNode(int index, Node node) {
++    public synchronized void replaceNode(int index, Node node) {
+         this.nodes.set(index, node);
+     }
+ 
+-    public int getNodeCount() {
++    public synchronized int getNodeCount() {
+         return this.nodes.size();
+     }
+ 
+-    public int getNextNodeIndex() {
++    public synchronized int getNextNodeIndex() {
+         return this.nextNodeIndex;
+     }
+ 
+-    public void setNextNodeIndex(int nodeIndex) {
++    public synchronized void setNextNodeIndex(int nodeIndex) {
+         this.nextNodeIndex = nodeIndex;
+     }
+ 
+-    public Vec3 getEntityPosAtNode(Entity entity, int index) {
++    public synchronized Vec3 getEntityPosAtNode(Entity entity, int index) {
+         Node node = this.nodes.get(index);
+         double d = (double)node.x + (double)((int)(entity.getBbWidth() + 1.0F)) * 0.5D;
+         double e = (double)node.y;
+@@ -82,28 +82,28 @@ public class Path {
+         return new Vec3(d, e, f);
+     }
+ 
+-    public BlockPos getNodePos(int index) {
++    public synchronized BlockPos getNodePos(int index) {
+         return this.nodes.get(index).asBlockPos();
+     }
+ 
+-    public Vec3 getNextEntityPos(Entity entity) {
++    public synchronized Vec3 getNextEntityPos(Entity entity) {
+         return this.getEntityPosAtNode(entity, this.nextNodeIndex);
+     }
+ 
+-    public BlockPos getNextNodePos() {
++    public synchronized BlockPos getNextNodePos() {
+         return this.nodes.get(this.nextNodeIndex).asBlockPos();
+     }
+ 
+-    public Node getNextNode() {
++    public synchronized Node getNextNode() {
+         return this.nodes.get(this.nextNodeIndex);
+     }
+ 
+     @Nullable
+-    public Node getPreviousNode() {
++    public synchronized Node getPreviousNode() {
+         return this.nextNodeIndex > 0 ? this.nodes.get(this.nextNodeIndex - 1) : null;
+     }
+ 
+-    public boolean sameAs(@Nullable Path o) {
++    public synchronized boolean sameAs(@Nullable Path o) {
+         if (o == null) {
+             return false;
+         } else if (o.nodes.size() != this.nodes.size()) {
+@@ -121,7 +121,7 @@ public class Path {
+         }
+     }
+ 
+-    public boolean canReach() {
++    public synchronized boolean canReach() {
+         return this.reached;
+     }
+ 
+@@ -133,16 +133,16 @@ public class Path {
+     }
+ 
+     @VisibleForDebug
+-    public Node[] getOpenSet() {
++    public synchronized Node[] getOpenSet() {
+         return this.openSet;
+     }
+ 
+     @VisibleForDebug
+-    public Node[] getClosedSet() {
++    public synchronized Node[] getClosedSet() {
+         return this.closedSet;
+     }
+ 
+-    public void writeToStream(FriendlyByteBuf buffer) {
++    public synchronized void writeToStream(FriendlyByteBuf buffer) {
+         if (this.targetNodes != null && !this.targetNodes.isEmpty()) {
+             buffer.writeBoolean(this.reached);
+             buffer.writeInt(this.nextNodeIndex);
+@@ -213,15 +213,15 @@ public class Path {
+     }
+ 
+     @Override
+-    public String toString() {
++    public synchronized String toString() {
+         return "Path(length=" + this.nodes.size() + ")";
+     }
+ 
+-    public BlockPos getTarget() {
++    public synchronized BlockPos getTarget() {
+         return this.target;
+     }
+ 
+-    public float getDistToTarget() {
++    public synchronized float getDistToTarget() {
+         return this.distToTarget;
+     }
+ }
+diff --git a/src/main/java/net/minecraft/world/level/pathfinder/PathFinder.java b/src/main/java/net/minecraft/world/level/pathfinder/PathFinder.java
+index 1d86630f773cd47853279f8d09ff5cb6ba87ff60..0f49ddf4796977a234e35b1a8d03a59642e18763 100644
+--- a/src/main/java/net/minecraft/world/level/pathfinder/PathFinder.java
++++ b/src/main/java/net/minecraft/world/level/pathfinder/PathFinder.java
+@@ -48,9 +48,7 @@ public class PathFinder {
+             }
+             // Paper end
+             Path path = this.findPath(world.getProfiler(), node, map, followRange, distance, rangeMultiplier);
+-            MinecraftServer.getServer().asyncExecutor.submitCleanTask(()->{
+-                this.nodeEvaluator.done();
+-            });
++            this.nodeEvaluator.done();
+             return path;
+         }
+     }
