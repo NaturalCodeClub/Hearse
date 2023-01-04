@@ -284,10 +284,18 @@ index f597d65d56964297eeeed6c7e77703764178fee0..b3bcafc8bafe1e4a1a2b690499b91e53
              if (this.count == 0) {
                  return;
 diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
-index 75965afd7b4bed23a5ecf618c7f91ff5e7ffd92f..e7201d948fef9cfcfa30a7ee628c1656fa2116da 100644
+index 75965afd7b4bed23a5ecf618c7f91ff5e7ffd92f..4a6f2257839762e35a39668d5fde827c5e9f4599 100644
 --- a/src/main/java/net/minecraft/server/level/ChunkMap.java
 +++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
-@@ -25,8 +25,8 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectMap.Entry;
+@@ -15,6 +15,7 @@ import com.mojang.logging.LogUtils;
+ import com.mojang.serialization.DataResult;
+ import com.mojang.serialization.JsonOps;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
++import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+ import it.unimi.dsi.fastutil.longs.Long2ByteMap;
+ import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
+@@ -25,8 +26,8 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectMap.Entry;
  import it.unimi.dsi.fastutil.longs.LongIterator;
  import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
  import it.unimi.dsi.fastutil.longs.LongSet;
@@ -298,7 +306,7 @@ index 75965afd7b4bed23a5ecf618c7f91ff5e7ffd92f..e7201d948fef9cfcfa30a7ee628c1656
  import java.io.IOException;
  import java.io.Writer;
  import java.nio.file.Path;
-@@ -52,6 +52,7 @@ import java.util.function.IntSupplier;
+@@ -52,6 +53,7 @@ import java.util.function.IntSupplier;
  import java.util.function.Supplier;
  import java.util.stream.Collectors;
  import javax.annotation.Nullable;
@@ -306,7 +314,7 @@ index 75965afd7b4bed23a5ecf618c7f91ff5e7ffd92f..e7201d948fef9cfcfa30a7ee628c1656
  import net.minecraft.CrashReport;
  import net.minecraft.CrashReportCategory;
  import net.minecraft.ReportedException;
-@@ -113,7 +114,6 @@ import org.bukkit.craftbukkit.generator.CustomChunkGenerator;
+@@ -113,7 +115,6 @@ import org.bukkit.craftbukkit.generator.CustomChunkGenerator;
  import org.bukkit.entity.Player;
  // CraftBukkit end
  
@@ -314,7 +322,7 @@ index 75965afd7b4bed23a5ecf618c7f91ff5e7ffd92f..e7201d948fef9cfcfa30a7ee628c1656
  
  public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider {
  
-@@ -153,7 +153,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+@@ -153,7 +154,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
      private final Queue<Runnable> unloadQueue;
      int viewDistance;
      public final com.destroystokyo.paper.util.misc.PlayerAreaMap playerMobDistanceMap; // Paper
@@ -323,6 +331,15 @@ index 75965afd7b4bed23a5ecf618c7f91ff5e7ffd92f..e7201d948fef9cfcfa30a7ee628c1656
  
      // Paper - rewrite chunk system
      // Paper start - optimise checkDespawn
+@@ -295,7 +296,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         // Paper - rewrite chunk system
+         this.tickingGenerated = new AtomicInteger();
+         this.playerMap = new PlayerMap();
+-        this.entityMap = new Int2ObjectOpenHashMap();
++        this.entityMap = Int2ObjectMaps.synchronize(new Int2ObjectOpenHashMap());
+         this.chunkTypeCache = new Long2ByteOpenHashMap();
+         this.chunkSaveCooldowns = new Long2LongOpenHashMap();
+         this.unloadQueue = Queues.newConcurrentLinkedQueue();
 diff --git a/src/main/java/net/minecraft/server/level/ServerChunkCache.java b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
 index 0ae45cf5a084fd412305e8b2f5dabe608b4eb1c1..686852f5cb6303381c45a673a0daf79a2d3a9dfe 100644
 --- a/src/main/java/net/minecraft/server/level/ServerChunkCache.java
@@ -503,6 +520,24 @@ index 7bd4e95fcaf3855a4fe412b5898a97d7992caad3..1ce343e6e829df8032c7c7671329d717
      }
  
      protected void sendDebugPackets() {
+diff --git a/src/main/java/net/minecraft/world/entity/ai/gossip/GossipContainer.java b/src/main/java/net/minecraft/world/entity/ai/gossip/GossipContainer.java
+index 097007c1c25ba55d9916fc820dd1d1149d81f6f4..16eec12db529dd513e0971289a9326652369de58 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/gossip/GossipContainer.java
++++ b/src/main/java/net/minecraft/world/entity/ai/gossip/GossipContainer.java
+@@ -30,11 +30,11 @@ import org.slf4j.Logger;
+ public class GossipContainer {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     public static final int DISCARD_THRESHOLD = 2;
+-    public final Map<UUID, GossipContainer.EntityGossips> gossips = Maps.newHashMap();
++    public final Map<UUID, GossipContainer.EntityGossips> gossips = Maps.newConcurrentMap();
+ 
+     @VisibleForDebug
+     public Map<UUID, Object2IntMap<GossipType>> getGossipEntries() {
+-        Map<UUID, Object2IntMap<GossipType>> map = Maps.newHashMap();
++        Map<UUID, Object2IntMap<GossipType>> map = Maps.newConcurrentMap();
+         this.gossips.keySet().forEach((uuid) -> {
+             GossipContainer.EntityGossips entityGossips = this.gossips.get(uuid);
+             map.put(uuid, entityGossips.entries);
 diff --git a/src/main/java/net/minecraft/world/entity/npc/Villager.java b/src/main/java/net/minecraft/world/entity/npc/Villager.java
 index 832469e39901d9ec666ddaf3aff77419f6195b1c..71a37aede7f958bbdb0bc92eba693105e9732d30 100644
 --- a/src/main/java/net/minecraft/world/entity/npc/Villager.java
