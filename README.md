@@ -3,10 +3,10 @@
 
 ## Hearse
 
-[![Github Actions Build](https://img.shields.io/github/actions/workflow/status/NaturalCodeClub/Hearse/.github/workflows/main.yml?branch=ver%2F1.19.3&style=flat-square)](https://github.com/Winds-Studio/Leaf/actions)
+[![Github Actions Build](https://img.shields.io/github/actions/workflow/status/NaturalCodeClub/Hearse/.github/workflows/main.yml?branch=ver%2F1.19.3&style=flat-square)](https://github.com/NaturalCodeClub/Hearse/actions)
 [![MIT License](https://img.shields.io/github/license/NaturalCodeClub/Hearse?style=flat-square)](LICENSE)
 
-<h5>Leaf is a drop-in replacement for <a href="https://github.com/PurpurMC/Purpur">Purpur</a> servers designed for fix some bugs and customize, and performance built on top of <a href="https://github.com/pufferfish-gg/Purpur">Purpur</a>.</h5>
+<h5>Hearse is a drop-in replacement for <a href="https://github.com/PurpurMC/Purpur">Purpur</a> servers designed for fix some bugs and customize, and performance built on top of <a href="https://github.com/pufferfish-gg/Purpur">Purpur</a>.</h5>
 <h8>Logo created by <a href="https://github.com/7777777-4547">7777777_4547</a></h8>
 </div>
 
@@ -19,7 +19,6 @@
 ## Contact
 
 - 📫 Telegram: `@M2ke4U` | QQ: `2506442080`
-
 
 ## Downloads
 
@@ -36,7 +35,7 @@ Building a Paperclip JAR for distribution:
 
 
 ## License
-[![MIT License](https://img.shields.io/github/license/Dreeam-qwq/Leaf?style=flat-square)](LICENSE)
+[![MIT License](https://img.shields.io/github/license/NaturalCodeClub/Hearse?style=flat-square)](LICENSE)
 
 All patches are licensed under the MIT license, unless otherwise noted in the patch headers.
 
