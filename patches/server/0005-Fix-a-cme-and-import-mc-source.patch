@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: BuildTools <unconfigured@null.spigotmc.org>
+Date: Wed, 4 Jan 2023 14:19:35 +0800
+Subject: [PATCH] Fix a cme and import mc source
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/ai/gossip/GossipContainer.java b/src/main/java/net/minecraft/world/entity/ai/gossip/GossipContainer.java
+index 097007c1c25ba55d9916fc820dd1d1149d81f6f4..16eec12db529dd513e0971289a9326652369de58 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/gossip/GossipContainer.java
++++ b/src/main/java/net/minecraft/world/entity/ai/gossip/GossipContainer.java
+@@ -30,11 +30,11 @@ import org.slf4j.Logger;
+ public class GossipContainer {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     public static final int DISCARD_THRESHOLD = 2;
+-    public final Map<UUID, GossipContainer.EntityGossips> gossips = Maps.newHashMap();
++    public final Map<UUID, GossipContainer.EntityGossips> gossips = Maps.newConcurrentMap();
+ 
+     @VisibleForDebug
+     public Map<UUID, Object2IntMap<GossipType>> getGossipEntries() {
+-        Map<UUID, Object2IntMap<GossipType>> map = Maps.newHashMap();
++        Map<UUID, Object2IntMap<GossipType>> map = Maps.newConcurrentMap();
+         this.gossips.keySet().forEach((uuid) -> {
+             GossipContainer.EntityGossips entityGossips = this.gossips.get(uuid);
+             map.put(uuid, entityGossips.entries);
