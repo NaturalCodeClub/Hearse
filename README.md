@@ -1,16 +1,50 @@
-# Hearse
-灵 车 服 务 端.
+<img src="Hearse.png" alt="Hearse logo" align="right" width="400">
+<div align="center">
 
-这个服务端基于Purpur
-## 特性
- - 异步实体travel
- - 异步实体AI
-## 警告
-该项目仍在开发中，可能存在崩溃问题
+## Hearse
 
-## 构建
-运行下面的命令:
+[![Github Actions Build](https://img.shields.io/github/actions/workflow/status/NaturalCodeClub/Hearse/.github/workflows/main.yml?branch=ver%2F1.19.3&style=flat-square)](https://github.com/Winds-Studio/Leaf/actions)
+[![MIT License](https://img.shields.io/github/license/NaturalCodeClub/Hearse?style=flat-square)](LICENSE)
+
+<h5>Leaf is a drop-in replacement for <a href="https://github.com/PurpurMC/Purpur">Purpur</a> servers designed for fix some bugs and customize, and performance built on top of <a href="https://github.com/pufferfish-gg/Purpur">Purpur</a>.</h5>
+<h8>Logo created by <a href="https://github.com/7777777-4547">7777777_4547</a></h8>
+</div>
+
+## Features
+- Fork of [Purpur](https://github.com/PurpurMC/Purpur) for better performance.
+- Async entity travel
+- Async entity AI
+- Some fixes
+
+## Contact
+
+- 📫 Telegram: `@M2ke4U` | QQ: `2506442080`
+
+
+## Downloads
+
+Downloads can be obtained in the [Actions](https://github.com/NaturalCodeClub/Hearse/actions) or [Releases](https://github.com/NaturalCodeClub/Hearse/releases)
+
+
+## Building
+
+Building a Paperclip JAR for distribution:
 
 ```bash
 ./gradlew applyPatches && ./gradlew createReobfPaperclipJar
 ```
+
+
+## License
+[![MIT License](https://img.shields.io/github/license/Dreeam-qwq/Leaf?style=flat-square)](LICENSE)
+
+All patches are licensed under the MIT license, unless otherwise noted in the patch headers.
+
+See [PaperMC/Paper](https://github.com/PaperMC/Paper), and [PaperMC/Paperweight](https://github.com/PaperMC/paperweight) for the license of material used by this project.
+
+Yes, this also includes all API provided by Paper, Spigot, and Bukkit.
+
+
+Credits:
+-------------
+- [Purpur](https://github.com/PurpurMC/Purpur)
