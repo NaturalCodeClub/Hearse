@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Thu, 5 Jan 2023 13:45:47 +0800
+Subject: [PATCH] Fix array index out of bounds exception
+
+
+diff --git a/src/main/java/net/minecraft/world/level/pathfinder/BinaryHeap.java b/src/main/java/net/minecraft/world/level/pathfinder/BinaryHeap.java
+index c949325dc9b21d8a75ee639210911c61616949c8..5db8b0b5a5b43f722a2cf672dfca852d18f78505 100644
+--- a/src/main/java/net/minecraft/world/level/pathfinder/BinaryHeap.java
++++ b/src/main/java/net/minecraft/world/level/pathfinder/BinaryHeap.java
+@@ -69,6 +69,11 @@ public class BinaryHeap {
+     }
+ 
+     private void upHeap(int index) {
++        //MCMT -- Fix array out of bounds exception
++        if (index == -1){
++            return;
++        }
++
+         Node node = this.heap[index];
+ 
+         int i;
+@@ -88,6 +93,11 @@ public class BinaryHeap {
+     }
+ 
+     private void downHeap(int index) {
++        //MCMT -- Fix array out of bounds exception
++        if (index == -1){
++            return;
++        }
++
+         Node node = this.heap[index];
+         float f = node.f;
+ 
