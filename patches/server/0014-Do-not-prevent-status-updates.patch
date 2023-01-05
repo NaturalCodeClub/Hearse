@@ -1,0 +1,136 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Thu, 5 Jan 2023 11:45:15 +0800
+Subject: [PATCH] Do not prevent status updates
+
+
+diff --git a/src/main/java/io/papermc/paper/chunk/system/entity/EntityLookup.java b/src/main/java/io/papermc/paper/chunk/system/entity/EntityLookup.java
+index ec90ff5c2581706180498b74dbbf960d52d47209..ddda275499d9c6e24aaf3a35ef14d7dedabb09a7 100644
+--- a/src/main/java/io/papermc/paper/chunk/system/entity/EntityLookup.java
++++ b/src/main/java/io/papermc/paper/chunk/system/entity/EntityLookup.java
+@@ -238,68 +238,55 @@ public final class EntityLookup implements LevelEntityGetter<Entity> {
+             return;
+         }
+ 
+-        final boolean entityStatusUpdateBefore = slices == null ? false : slices.startPreventingStatusUpdates();
+-
+-        if (entityStatusUpdateBefore) {
+-            LOGGER.warn("Cannot update chunk status for entity " + entity + " since entity chunk (" + slices.chunkX + "," + slices.chunkZ + ") is receiving update");
+-            return;
+-        }
+-
++        final Boolean ticketBlockBefore = this.world.chunkTaskScheduler.chunkHolderManager.blockTicketUpdates();
+         try {
+-            final Boolean ticketBlockBefore = this.world.chunkTaskScheduler.chunkHolderManager.blockTicketUpdates();
++            entity.updatingSectionStatus = true;
+             try {
+-                entity.updatingSectionStatus = true;
+-                try {
+-                    if (created) {
+-                        EntityLookup.this.worldCallback.onCreated(entity);
+-                    }
++                if (created) {
++                    EntityLookup.this.worldCallback.onCreated(entity);
++                }
+ 
+-                    if (oldVisibility == newVisibility) {
+-                        if (moved && newVisibility.isAccessible()) {
+-                            EntityLookup.this.worldCallback.onSectionChange(entity);
+-                        }
+-                        return;
++                if (oldVisibility == newVisibility) {
++                    if (moved && newVisibility.isAccessible()) {
++                        EntityLookup.this.worldCallback.onSectionChange(entity);
+                     }
++                    return;
++                }
+ 
+-                    if (newVisibility.ordinal() > oldVisibility.ordinal()) {
+-                        // status upgrade
+-                        if (!oldVisibility.isAccessible() && newVisibility.isAccessible()) {
+-                            this.accessibleEntities.add(entity);
+-                            EntityLookup.this.worldCallback.onTrackingStart(entity);
+-                        }
+-
+-                        if (!oldVisibility.isTicking() && newVisibility.isTicking()) {
+-                            EntityLookup.this.worldCallback.onTickingStart(entity);
+-                        }
+-                    } else {
+-                        // status downgrade
+-                        if (oldVisibility.isTicking() && !newVisibility.isTicking()) {
+-                            EntityLookup.this.worldCallback.onTickingEnd(entity);
+-                        }
+-
+-                        if (oldVisibility.isAccessible() && !newVisibility.isAccessible()) {
+-                            this.accessibleEntities.remove(entity);
+-                            EntityLookup.this.worldCallback.onTrackingEnd(entity);
+-                        }
++                if (newVisibility.ordinal() > oldVisibility.ordinal()) {
++                    // status upgrade
++                    if (!oldVisibility.isAccessible() && newVisibility.isAccessible()) {
++                        this.accessibleEntities.add(entity);
++                        EntityLookup.this.worldCallback.onTrackingStart(entity);
+                     }
+ 
+-                    if (moved && newVisibility.isAccessible()) {
+-                        EntityLookup.this.worldCallback.onSectionChange(entity);
++                    if (!oldVisibility.isTicking() && newVisibility.isTicking()) {
++                        EntityLookup.this.worldCallback.onTickingStart(entity);
++                    }
++                } else {
++                    // status downgrade
++                    if (oldVisibility.isTicking() && !newVisibility.isTicking()) {
++                        EntityLookup.this.worldCallback.onTickingEnd(entity);
+                     }
+ 
+-                    if (destroyed) {
+-                        EntityLookup.this.worldCallback.onDestroyed(entity);
++                    if (oldVisibility.isAccessible() && !newVisibility.isAccessible()) {
++                        this.accessibleEntities.remove(entity);
++                        EntityLookup.this.worldCallback.onTrackingEnd(entity);
+                     }
+-                } finally {
+-                    entity.updatingSectionStatus = false;
++                }
++
++                if (moved && newVisibility.isAccessible()) {
++                    EntityLookup.this.worldCallback.onSectionChange(entity);
++                }
++
++                if (destroyed) {
++                    EntityLookup.this.worldCallback.onDestroyed(entity);
+                 }
+             } finally {
+-                this.world.chunkTaskScheduler.chunkHolderManager.unblockTicketUpdates(ticketBlockBefore);
++                entity.updatingSectionStatus = false;
+             }
+         } finally {
+-            if (slices != null) {
+-                slices.stopPreventingStatusUpdates(false);
+-            }
++            this.world.chunkTaskScheduler.chunkHolderManager.unblockTicketUpdates(ticketBlockBefore);
+         }
+     }
+ 
+diff --git a/src/main/java/io/papermc/paper/world/ChunkEntitySlices.java b/src/main/java/io/papermc/paper/world/ChunkEntitySlices.java
+index b3bcafc8bafe1e4a1a2b690499b91e5316a604f1..eb26ee51eac702fd09805afc1d8b3931bb80b2de 100644
+--- a/src/main/java/io/papermc/paper/world/ChunkEntitySlices.java
++++ b/src/main/java/io/papermc/paper/world/ChunkEntitySlices.java
+@@ -169,17 +169,6 @@ public final class ChunkEntitySlices {
+         }
+     }
+ 
+-    private boolean preventStatusUpdates;
+-    public boolean startPreventingStatusUpdates() {
+-        final boolean ret = this.preventStatusUpdates;
+-        this.preventStatusUpdates = true;
+-        return ret;
+-    }
+-
+-    public void stopPreventingStatusUpdates(final boolean prev) {
+-        this.preventStatusUpdates = prev;
+-    }
+-
+     public void updateStatus(final ChunkHolder.FullChunkStatus status, final EntityLookup lookup) {
+         this.status = status;
+ 
