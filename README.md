@@ -49,6 +49,7 @@ Credits:
 - [Purpur](https://github.com/PurpurMC/Purpur)
 - [KeYi](https://github.com/KeYiMC/KeYi)
 - [Akarin](https://github.com/Akarin-project/Akarin)
+- [MCMTFabric](https://github.com/himekifee/MCMTFabric)
 
 ## Attention
 This is just a joke, do not use it in a production environment, even though it has stabilized
