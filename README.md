@@ -12,8 +12,7 @@
 
 ## Features
 - Fork of [Purpur](https://github.com/PurpurMC/Purpur) for better performance.
-- Async entity travel
-- Async entity AI
+- Parallel entity ticking(Half of async)(In alpha)
 - Some fixes
 
 ## Contact
