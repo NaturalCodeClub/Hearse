@@ -549,7 +549,7 @@ index cea4447aad2d64db56a76e4ba180dc7326d2e13b..09cda218544f587072002ce14d0aed0f
                  }
                  // Spigot End
 diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
-index b396a329e753f42b3878736b6b14bafda02d3744..0bc7eee8fe74697ced3e65ea33fc373f81d16d2f 100644
+index b396a329e753f42b3878736b6b14bafda02d3744..1383031f6525cc0b18775fbd48d324c3ff12f05f 100644
 --- a/src/main/java/net/minecraft/server/level/ServerLevel.java
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -1,5 +1,6 @@
@@ -568,8 +568,33 @@ index b396a329e753f42b3878736b6b14bafda02d3744..0bc7eee8fe74697ced3e65ea33fc373f
              this.getChunkSource().mainThreadProcessor.execute(() -> {
                  this.loadChunksForMoveAsync(axisalignedbb, priority, onLoad);
              });
+@@ -1730,8 +1731,9 @@ public class ServerLevel extends Level implements WorldGenLevel {
+     @Override
+     public void sendBlockUpdated(BlockPos pos, BlockState oldState, BlockState newState, int flags) {
+         if (this.isUpdatingNavigations) {
+-            String s = "recursive call to sendBlockUpdated";
+-
++            if (Thread.currentThread() instanceof AnotherTickThread){
++                return;
++            }
+             Util.logAndPauseIfInIde("recursive call to sendBlockUpdated", new IllegalStateException("recursive call to sendBlockUpdated"));
+         }
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 35afff85bcd4019789e4c40833b35df15a373b8c..230d9a08049c3c7bfa61c38844f3da26b260dce0 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -4453,7 +4453,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
+         // Paper end
+         // Paper start - rewrite chunk system
+         if (this.updatingSectionStatus) {
+-            LOGGER.error("Refusing to update position for entity " + this + " to position " + new Vec3(x, y, z) + " since it is processing a section status update", new Throwable());
++            LOGGER.error("Refusing to update position for entity " + this + " to position " + new Vec3(x, y, z) + " since it is processing a section status update");
+             return;
+         }
+         // Paper end - rewrite chunk system
 diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
-index 454cd09309f581b43a521fcb8fd184b7788c6a88..62eb1a3c209a5489b04765ff27492ad6912cc737 100644
+index 454cd09309f581b43a521fcb8fd184b7788c6a88..ebeefe4b7aa3e33f3df8dd4113206acdb94050d5 100644
 --- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
 @@ -44,6 +44,7 @@ import net.minecraft.network.syncher.EntityDataAccessor;
@@ -580,7 +605,34 @@ index 454cd09309f581b43a521fcb8fd184b7788c6a88..62eb1a3c209a5489b04765ff27492ad6
  import net.minecraft.server.level.ServerChunkCache;
  import net.minecraft.server.level.ServerLevel;
  import net.minecraft.server.level.ServerPlayer;
-@@ -3485,70 +3486,135 @@ public abstract class LivingEntity extends Entity {
+@@ -2013,15 +2014,18 @@ public abstract class LivingEntity extends Entity {
+             BlockPos blockposition = this.blockPosition();
+             BlockState iblockdata = this.getFeetBlockState();
+ 
+-            if (iblockdata.is(BlockTags.CLIMBABLE)) {
+-                this.lastClimbablePos = Optional.of(blockposition);
+-                return true;
+-            } else if (iblockdata.getBlock() instanceof TrapDoorBlock && this.trapdoorUsableAsLadder(blockposition, iblockdata)) {
+-                this.lastClimbablePos = Optional.of(blockposition);
+-                return true;
+-            } else {
+-                return false;
++            if (iblockdata!=null){
++                if (iblockdata.is(BlockTags.CLIMBABLE)) {
++                    this.lastClimbablePos = Optional.of(blockposition);
++                    return true;
++                } else if (iblockdata.getBlock() instanceof TrapDoorBlock && this.trapdoorUsableAsLadder(blockposition, iblockdata)) {
++                    this.lastClimbablePos = Optional.of(blockposition);
++                    return true;
++                } else {
++                    return false;
++                }
+             }
++            return false;
+         }
+     }
+ 
+@@ -3485,70 +3489,135 @@ public abstract class LivingEntity extends Entity {
          this.updateFallFlying();
          AABB axisalignedbb = this.getBoundingBox();
  
@@ -678,8 +730,8 @@ index 454cd09309f581b43a521fcb8fd184b7788c6a88..62eb1a3c209a5489b04765ff27492ad6
                      } else if (!to.equals(event.getTo())) {
 -                        absMoveTo(to.getX(), to.getY(), to.getZ(), to.getYaw(), to.getPitch());
 +                        absMoveTo(event.getTo().getX(), event.getTo().getY(), event.getTo().getZ(), event.getTo().getYaw(), event.getTo().getPitch());
-                     }
-                 }
++                    }
++                }
 +                // Purpur start
 +                if (getRider() != null) {
 +                    getRider().resetLastActionTime();
@@ -692,8 +744,8 @@ index 454cd09309f581b43a521fcb8fd184b7788c6a88..62eb1a3c209a5489b04765ff27492ad6
 +                        } else if (!to.equals(event.getTo())) {
 +                            absMoveTo(to.getX(), to.getY(), to.getZ(), to.getYaw(), to.getPitch());
 +                        }
-+                    }
-+                }
+                     }
+                 }
 +                // Purpur end
              }
 -            // Purpur end
