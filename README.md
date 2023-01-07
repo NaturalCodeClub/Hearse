@@ -51,4 +51,4 @@ Credits:
 - [MCMTFabric](https://github.com/himekifee/MCMTFabric)
 
 ## Attention
-This is just a joke, do not use it in a production environment, even though it has stabilized
+This is just a joke, do not use it in a production environment
