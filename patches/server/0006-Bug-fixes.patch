@@ -1,0 +1,179 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Sat, 7 Jan 2023 17:32:50 +0800
+Subject: [PATCH] Bug fixes
+
+
+diff --git a/src/main/java/io/papermc/paper/chunk/PlayerChunkLoader.java b/src/main/java/io/papermc/paper/chunk/PlayerChunkLoader.java
+index 0b060183429f4c72ec767075538477b4302bbf0d..449124b2fef647a6f2ac7c86fa6d07c3e16197b5 100644
+--- a/src/main/java/io/papermc/paper/chunk/PlayerChunkLoader.java
++++ b/src/main/java/io/papermc/paper/chunk/PlayerChunkLoader.java
+@@ -6,10 +6,9 @@ import io.papermc.paper.configuration.GlobalConfiguration;
+ import io.papermc.paper.util.CoordinateUtils;
+ import io.papermc.paper.util.IntervalledCounter;
+ import io.papermc.paper.util.TickThread;
+-import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+-import it.unimi.dsi.fastutil.objects.Reference2IntOpenHashMap;
+-import it.unimi.dsi.fastutil.objects.Reference2ObjectLinkedOpenHashMap;
+-import it.unimi.dsi.fastutil.objects.ReferenceLinkedOpenHashSet;
++import it.unimi.dsi.fastutil.longs.LongSet;
++import it.unimi.dsi.fastutil.objects.*;
++import net.himeki.mcmtfabric.parallelised.fastutil.ConcurrentLongLinkedOpenHashSet;
+ import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetSimulationDistancePacket;
+@@ -22,10 +21,10 @@ import net.minecraft.world.level.chunk.LevelChunk;
+ import org.apache.commons.lang3.mutable.MutableObject;
+ import org.bukkit.craftbukkit.entity.CraftPlayer;
+ import org.bukkit.entity.Player;
+-import java.util.ArrayDeque;
+-import java.util.ArrayList;
+-import java.util.List;
+-import java.util.TreeSet;
++
++import java.util.*;
++import java.util.concurrent.ConcurrentLinkedDeque;
++import java.util.concurrent.ConcurrentSkipListSet;
+ import java.util.concurrent.atomic.AtomicInteger;
+ 
+ public final class PlayerChunkLoader {
+@@ -76,10 +75,10 @@ public final class PlayerChunkLoader {
+     }
+ 
+     protected final ChunkMap chunkMap;
+-    protected final Reference2ObjectLinkedOpenHashMap<ServerPlayer, PlayerLoaderData> playerMap = new Reference2ObjectLinkedOpenHashMap<>(512, 0.7f);
+-    protected final ReferenceLinkedOpenHashSet<PlayerLoaderData> chunkSendQueue = new ReferenceLinkedOpenHashSet<>(512, 0.7f);
++    protected final Reference2ObjectMap<ServerPlayer, PlayerLoaderData> playerMap = Reference2ObjectMaps.synchronize(new Reference2ObjectLinkedOpenHashMap<>(512, 0.7f));
++    protected final ReferenceSet<PlayerLoaderData> chunkSendQueue = ReferenceSets.synchronize(new ReferenceLinkedOpenHashSet<>(512, 0.7f));
+ 
+-    protected final TreeSet<PlayerLoaderData> chunkLoadQueue = new TreeSet<>((final PlayerLoaderData p1, final PlayerLoaderData p2) -> {
++    protected final NavigableSet<PlayerLoaderData> chunkLoadQueue = new ConcurrentSkipListSet<>((final PlayerLoaderData p1, final PlayerLoaderData p2) -> {
+         if (p1 == p2) {
+             return 0;
+         }
+@@ -109,7 +108,7 @@ public final class PlayerChunkLoader {
+         return Integer.compare(System.identityHashCode(p1), System.identityHashCode(p2));
+     });
+ 
+-    protected final TreeSet<PlayerLoaderData> chunkSendWaitQueue = new TreeSet<>((final PlayerLoaderData p1, final PlayerLoaderData p2) -> {
++    protected final NavigableSet<PlayerLoaderData> chunkSendWaitQueue = new ConcurrentSkipListSet<>((final PlayerLoaderData p1, final PlayerLoaderData p2) -> {
+         if (p1 == p2) {
+             return 0;
+         }
+@@ -308,8 +307,8 @@ public final class PlayerChunkLoader {
+                 });
+     }
+ 
+-    protected final LongOpenHashSet isTargetedForPlayerLoad = new LongOpenHashSet();
+-    protected final LongOpenHashSet chunkTicketTracker = new LongOpenHashSet();
++    protected final LongSet isTargetedForPlayerLoad = new ConcurrentLongLinkedOpenHashSet();
++    protected final LongSet chunkTicketTracker = new ConcurrentLongLinkedOpenHashSet();
+ 
+     public boolean isChunkNearPlayers(final int chunkX, final int chunkZ) {
+         final PooledLinkedHashSets.PooledObjectLinkedOpenHashSet<ServerPlayer> playersInSendRange = this.broadcastMap.getObjectsInRange(chunkX, chunkZ);
+@@ -523,17 +522,14 @@ public final class PlayerChunkLoader {
+         if (time < nextChunkSend) {
+             return;
+         }
++        PlayerLoaderData data1;
+         // drain entries from wait queue
+-        while (!this.chunkSendWaitQueue.isEmpty()) {
+-            final PlayerLoaderData data = this.chunkSendWaitQueue.first();
+-
+-            if (data.nextChunkSendTarget > time) {
++        while ((data1 = this.chunkSendWaitQueue.pollFirst())!=null) {
++            if(data1.nextChunkSendTarget > time) {
++                this.chunkSendWaitQueue.add(data1);
+                 break;
+             }
+-
+-            this.chunkSendWaitQueue.pollFirst();
+-
+-            this.chunkSendQueue.add(data);
++            this.chunkSendQueue.add(data1);
+         }
+ 
+         if (this.chunkSendQueue.isEmpty()) {
+@@ -542,8 +538,9 @@ public final class PlayerChunkLoader {
+ 
+         final int maxSends = this.getMaxConcurrentChunkSends();
+         final long nextPlayerDeadline = this.getTargetSendPerPlayerAddend() + time;
++        final Deque<PlayerLoaderData> tempCopy = new ArrayDeque<>(this.chunkSendWaitQueue);
+         for (;;) {
+-            if (this.chunkSendQueue.isEmpty()) {
++            if (tempCopy.isEmpty()) {
+                 break;
+             }
+             final int currSends = concurrentChunkSends.get();
+@@ -557,7 +554,8 @@ public final class PlayerChunkLoader {
+ 
+             // send chunk
+ 
+-            final PlayerLoaderData data = this.chunkSendQueue.removeFirst();
++            final PlayerLoaderData data = tempCopy.removeFirst();
++            this.chunkSendWaitQueue.remove(data);
+ 
+             final ChunkPriorityHolder queuedSend = data.sendQueue.pollFirst();
+             if (queuedSend == null) {
+@@ -576,6 +574,7 @@ public final class PlayerChunkLoader {
+ 
+             data.nextChunkSendTarget = nextPlayerDeadline;
+             this.chunkSendWaitQueue.add(data);
++            tempCopy.add(data);
+ 
+             synchronized (this.sendingChunkCounts) {
+                 this.sendingChunkCounts.addTo(data, 1);
+@@ -618,16 +617,12 @@ public final class PlayerChunkLoader {
+         final int maxLoads = this.getMaxChunkLoads();
+         final long time = System.nanoTime();
+         boolean updatedCounters = false;
+-        for (;;) {
+-            final PlayerLoaderData data = this.chunkLoadQueue.pollFirst();
+-
++        PlayerLoaderData data;
++        while ((data = this.chunkLoadQueue.pollFirst())!=null) {
+             data.lastChunkLoad = time;
+ 
+             final ChunkPriorityHolder queuedLoad = data.loadQueue.peekFirst();
+             if (queuedLoad == null) {
+-                if (this.chunkLoadQueue.isEmpty()) {
+-                    break;
+-                }
+                 continue;
+             }
+ 
+@@ -786,11 +781,11 @@ public final class PlayerChunkLoader {
+ 
+         // warning: modifications of this field must be aware that the loadQueue inside PlayerChunkLoader uses this field
+         // in a comparator!
+-        protected final ArrayDeque<ChunkPriorityHolder> loadQueue = new ArrayDeque<>();
+-        protected final LongOpenHashSet sentChunks = new LongOpenHashSet();
+-        protected final LongOpenHashSet chunksToBeSent = new LongOpenHashSet();
++        protected final Deque<ChunkPriorityHolder> loadQueue = new ConcurrentLinkedDeque<>();
++        protected final LongSet sentChunks = new ConcurrentLongLinkedOpenHashSet();
++        protected final LongSet chunksToBeSent = new ConcurrentLongLinkedOpenHashSet();
+ 
+-        protected final TreeSet<ChunkPriorityHolder> sendQueue = new TreeSet<>((final ChunkPriorityHolder p1, final ChunkPriorityHolder p2) -> {
++        protected final NavigableSet<ChunkPriorityHolder> sendQueue = new ConcurrentSkipListSet<>((final ChunkPriorityHolder p1, final ChunkPriorityHolder p2) -> {
+             final int distanceCompare = Integer.compare(p1.manhattanDistanceToPlayer, p2.manhattanDistanceToPlayer);
+             if (distanceCompare != 0) {
+                 return distanceCompare;
+diff --git a/src/main/java/net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos.java b/src/main/java/net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos.java
+index d3827215ef19f6e1e63f846d91ed00525a318c7a..8e1d6032a1edea8d3128fd7e2e3d8fde691eca7e 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos.java
++++ b/src/main/java/net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos.java
+@@ -35,12 +35,12 @@ public class LongJumpToRandomPos<E extends Mob> extends Behavior<E> {
+     private static final int PREPARE_JUMP_DURATION = 40;
+     protected static final int MIN_PATHFIND_DISTANCE_TO_VALID_JUMP = 8;
+     private static final int TIME_OUT_DURATION = 200;
+-    private static final List<Integer> ALLOWED_ANGLES = Lists.newArrayList(65, 70, 75, 80);
++    private static final List<Integer> ALLOWED_ANGLES = Collections.synchronizedList(Lists.newArrayList(65, 70, 75, 80));
+     private final UniformInt timeBetweenLongJumps;
+     protected final int maxLongJumpHeight;
+     protected final int maxLongJumpWidth;
+     protected final float maxJumpVelocity;
+-    protected List<LongJumpToRandomPos.PossibleJump> jumpCandidates = Lists.newArrayList();
++    protected List<LongJumpToRandomPos.PossibleJump> jumpCandidates = Lists.newCopyOnWriteArrayList();
+     protected Optional<Vec3> initialPosition = Optional.empty();
+     @Nullable
+     protected Vec3 chosenJump;
