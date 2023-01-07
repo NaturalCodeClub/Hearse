@@ -13,5 +13,5 @@ minecraft net/minecraft/world/level/pathfinder/BinaryHeap.java
 minecraft net/minecraft/world/level/pathfinder/FlyNodeEvaluator.java
 minecraft net/minecraft/world/level/pathfinder/NodeEvaluator.java
 minecraft net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java
-minecraft net/minecraft/world/level/lighting/DynamicGraphMinFixedPoint.java
 minecraft net/minecraft/util/ThreadingDetector.java
+minecraft net/minecraft/world/level/lighting/DynamicGraphMinFixedPoint.java
