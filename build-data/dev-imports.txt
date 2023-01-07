@@ -16,3 +16,4 @@ minecraft net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java
 minecraft net/minecraft/util/ThreadingDetector.java
 minecraft net/minecraft/world/level/lighting/DynamicGraphMinFixedPoint.java
 minecraft net/minecraft/world/level/gameevent/EuclideanGameEventListenerRegistry.java
+minecraft net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos.java
