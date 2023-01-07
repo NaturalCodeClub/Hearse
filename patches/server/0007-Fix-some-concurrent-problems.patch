@@ -1,0 +1,99 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Sat, 7 Jan 2023 18:48:12 +0800
+Subject: [PATCH] Fix some concurrent problems
+
+
+diff --git a/src/main/java/io/papermc/paper/chunk/PlayerChunkLoader.java b/src/main/java/io/papermc/paper/chunk/PlayerChunkLoader.java
+index 449124b2fef647a6f2ac7c86fa6d07c3e16197b5..b8d80be33322504782f309c79ca6f3389e8e77b4 100644
+--- a/src/main/java/io/papermc/paper/chunk/PlayerChunkLoader.java
++++ b/src/main/java/io/papermc/paper/chunk/PlayerChunkLoader.java
+@@ -76,7 +76,7 @@ public final class PlayerChunkLoader {
+ 
+     protected final ChunkMap chunkMap;
+     protected final Reference2ObjectMap<ServerPlayer, PlayerLoaderData> playerMap = Reference2ObjectMaps.synchronize(new Reference2ObjectLinkedOpenHashMap<>(512, 0.7f));
+-    protected final ReferenceSet<PlayerLoaderData> chunkSendQueue = ReferenceSets.synchronize(new ReferenceLinkedOpenHashSet<>(512, 0.7f));
++    protected final Deque<PlayerLoaderData> chunkSendQueue = new ConcurrentLinkedDeque<>();
+ 
+     protected final NavigableSet<PlayerLoaderData> chunkLoadQueue = new ConcurrentSkipListSet<>((final PlayerLoaderData p1, final PlayerLoaderData p2) -> {
+         if (p1 == p2) {
+@@ -525,10 +525,12 @@ public final class PlayerChunkLoader {
+         PlayerLoaderData data1;
+         // drain entries from wait queue
+         while ((data1 = this.chunkSendWaitQueue.pollFirst())!=null) {
+-            if(data1.nextChunkSendTarget > time) {
+-                this.chunkSendWaitQueue.add(data1);
++            if (data1.nextChunkSendTarget > time) {
+                 break;
+             }
++
++            this.chunkSendWaitQueue.pollFirst();
++
+             this.chunkSendQueue.add(data1);
+         }
+ 
+@@ -538,11 +540,9 @@ public final class PlayerChunkLoader {
+ 
+         final int maxSends = this.getMaxConcurrentChunkSends();
+         final long nextPlayerDeadline = this.getTargetSendPerPlayerAddend() + time;
+-        final Deque<PlayerLoaderData> tempCopy = new ArrayDeque<>(this.chunkSendWaitQueue);
+-        for (;;) {
+-            if (tempCopy.isEmpty()) {
+-                break;
+-            }
++        final Deque<PlayerLoaderData> tempCopy = new ArrayDeque<>(this.chunkSendQueue);
++        PlayerLoaderData data;
++        while ((data = tempCopy.pollFirst())!=null) {
+             final int currSends = concurrentChunkSends.get();
+             if (currSends >= maxSends) {
+                 break;
+@@ -551,20 +551,12 @@ public final class PlayerChunkLoader {
+             if (!concurrentChunkSends.compareAndSet(currSends, currSends + 1)) {
+                 continue;
+             }
+-
+             // send chunk
+-
+-            final PlayerLoaderData data = tempCopy.removeFirst();
+-            this.chunkSendWaitQueue.remove(data);
+-
++            this.chunkSendQueue.remove(data);
+             final ChunkPriorityHolder queuedSend = data.sendQueue.pollFirst();
+             if (queuedSend == null) {
+                 concurrentChunkSends.getAndDecrement(); // we never sent, so decrease
+                 // stop iterating over players who have nothing to send
+-                if (this.chunkSendQueue.isEmpty()) {
+-                    // nothing left
+-                    break;
+-                }
+                 continue;
+             }
+ 
+@@ -574,23 +566,23 @@ public final class PlayerChunkLoader {
+ 
+             data.nextChunkSendTarget = nextPlayerDeadline;
+             this.chunkSendWaitQueue.add(data);
+-            tempCopy.add(data);
+ 
+             synchronized (this.sendingChunkCounts) {
+                 this.sendingChunkCounts.addTo(data, 1);
+             }
+ 
++            final PlayerLoaderData finalData = data;
+             data.sendChunk(queuedSend.chunkX, queuedSend.chunkZ, () -> {
+                 synchronized (this.sendingChunkCounts) {
+-                    final int count = this.sendingChunkCounts.getInt(data);
++                    final int count = this.sendingChunkCounts.getInt(finalData);
+                     if (count == 0) {
+                         // disconnected, so we don't need to decrement: it will be decremented for us
+                         return;
+                     }
+                     if (count == 1) {
+-                        this.sendingChunkCounts.removeInt(data);
++                        this.sendingChunkCounts.removeInt(finalData);
+                     } else {
+-                        this.sendingChunkCounts.put(data, count - 1);
++                        this.sendingChunkCounts.put(finalData, count - 1);
+                     }
+                 }
+ 
