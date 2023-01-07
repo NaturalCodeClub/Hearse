@@ -1,0 +1,429 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Sat, 7 Jan 2023 16:48:19 +0800
+Subject: [PATCH] Fix some problems
+
+
+diff --git a/src/main/java/io/papermc/paper/chunk/system/entity/EntityLookup.java b/src/main/java/io/papermc/paper/chunk/system/entity/EntityLookup.java
+index bd418ccc4eb9c7f1f793b1c543662ffd8dd42e76..0aa279028181726f2ec211915688d4434a7178d6 100644
+--- a/src/main/java/io/papermc/paper/chunk/system/entity/EntityLookup.java
++++ b/src/main/java/io/papermc/paper/chunk/system/entity/EntityLookup.java
+@@ -169,12 +169,12 @@ public final class EntityLookup implements LevelEntityGetter<Entity> {
+             }
+ 
+             @Override
+-            public synchronized boolean hasNext() {
++            public boolean hasNext() {
+                 return this.off < this.length;
+             }
+ 
+             @Override
+-            public synchronized T next() {
++            public T next() {
+                 if (this.off >= this.length) {
+                     throw new NoSuchElementException();
+                 }
+@@ -426,12 +426,8 @@ public final class EntityLookup implements LevelEntityGetter<Entity> {
+         // ensure the old section is owned by this tick thread
+         TickThread.ensureTickThread(this.world, entity.sectionX, entity.sectionZ, "Cannot move entity off-main");
+ 
+-        final ChunkEntitySlices old;
+-        final ChunkEntitySlices slices;
+-        synchronized (this){
+-            old = this.getChunk(entity.sectionX, entity.sectionZ);
+-            slices = this.getOrCreateChunk(newSectionX, newSectionZ);
+-        }
++        final ChunkEntitySlices old = this.getChunk(entity.sectionX, entity.sectionZ);
++        final ChunkEntitySlices slices = this.getOrCreateChunk(newSectionX, newSectionZ);
+ 
+         if (!old.removeEntity(entity, entity.sectionY)) {
+             LOGGER.warn("Could not remove entity " + entity + " from its old chunk section (" + entity.sectionX + "," + entity.sectionY + "," + entity.sectionZ + ") since it was not contained in the section");
+diff --git a/src/main/java/io/papermc/paper/world/ChunkEntitySlices.java b/src/main/java/io/papermc/paper/world/ChunkEntitySlices.java
+index 93fadc67081926ffe72cc8ede719994b3e6acd80..09cd3f34eb95ef46df0bd1a81924a9f709bc1adc 100644
+--- a/src/main/java/io/papermc/paper/world/ChunkEntitySlices.java
++++ b/src/main/java/io/papermc/paper/world/ChunkEntitySlices.java
+@@ -376,7 +376,7 @@ public final class ChunkEntitySlices {
+             this.entitiesBySection = new BasicEntityList[sectionCount];
+         }
+ 
+-        public synchronized void addEntity(final Entity entity, final int sectionIndex) {
++        public void addEntity(final Entity entity, final int sectionIndex) {
+             BasicEntityList<Entity> list = this.entitiesBySection[sectionIndex];
+ 
+             if (list != null && list.has(entity)) {
+@@ -392,7 +392,7 @@ public final class ChunkEntitySlices {
+             ++this.count;
+         }
+ 
+-        public synchronized void removeEntity(final Entity entity, final int sectionIndex) {
++        public void removeEntity(final Entity entity, final int sectionIndex) {
+             final BasicEntityList<Entity> list = this.entitiesBySection[sectionIndex];
+ 
+             if (list == null || !list.remove(entity)) {
+@@ -407,7 +407,7 @@ public final class ChunkEntitySlices {
+             }
+         }
+ 
+-        public synchronized void getEntities(final Entity except, final AABB box, final List<Entity> into, final Predicate<? super Entity> predicate) {
++        public void getEntities(final Entity except, final AABB box, final List<Entity> into, final Predicate<? super Entity> predicate) {
+             if (this.count == 0) {
+                 return;
+             }
+@@ -445,7 +445,7 @@ public final class ChunkEntitySlices {
+             }
+         }
+ 
+-        public synchronized void getEntitiesWithEnderDragonParts(final Entity except, final AABB box, final List<Entity> into,
++        public void getEntitiesWithEnderDragonParts(final Entity except, final AABB box, final List<Entity> into,
+                                                     final Predicate<? super Entity> predicate) {
+             if (this.count == 0) {
+                 return;
+@@ -496,7 +496,7 @@ public final class ChunkEntitySlices {
+             }
+         }
+ 
+-        public synchronized void getEntitiesWithEnderDragonParts(final Entity except, final Class<?> clazz, final AABB box, final List<Entity> into,
++        public void getEntitiesWithEnderDragonParts(final Entity except, final Class<?> clazz, final AABB box, final List<Entity> into,
+                                                     final Predicate<? super Entity> predicate) {
+             if (this.count == 0) {
+                 return;
+@@ -547,7 +547,7 @@ public final class ChunkEntitySlices {
+             }
+         }
+ 
+-        public synchronized <T extends Entity> void getEntities(final EntityType<?> type, final AABB box, final List<? super T> into,
++        public <T extends Entity> void getEntities(final EntityType<?> type, final AABB box, final List<? super T> into,
+                                                    final Predicate<? super T> predicate) {
+             if (this.count == 0) {
+                 return;
+diff --git a/src/main/java/net/minecraft/server/level/ChunkHolder.java b/src/main/java/net/minecraft/server/level/ChunkHolder.java
+index 05e465ec9b716677d22702aead2755c571f45901..997975b2578550ea3fccb0159f84edab484da1bf 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkHolder.java
++++ b/src/main/java/net/minecraft/server/level/ChunkHolder.java
+@@ -304,29 +304,28 @@ public class ChunkHolder {
+             }
+ 
+             for (j = 0; j < this.changedBlocksPerSection.length; ++j) {
+-                if (this.changedBlocksPerSection[j] == null){
+-                    continue;
+-                }
+-                ShortSet shortset = new ShortOpenHashSet(this.changedBlocksPerSection[j]);
+-                int k = this.levelHeightAccessor.getSectionYFromSectionIndex(j);
+-                SectionPos sectionposition = SectionPos.of(chunk.getPos(), k);
+-
+-                if (shortset.size() == 1) {
+-                    BlockPos blockposition = sectionposition.relativeToBlockPos(shortset.iterator().nextShort());
+-                    BlockState iblockdata = world.getBlockState(blockposition);
+-
+-                    this.broadcast(new ClientboundBlockUpdatePacket(blockposition, iblockdata), false);
+-                    this.broadcastBlockEntityIfNeeded(world, blockposition, iblockdata);
+-                } else {
+-                    LevelChunkSection chunksection = chunk.getSection(j);
+-                    ClientboundSectionBlocksUpdatePacket packetplayoutmultiblockchange = new ClientboundSectionBlocksUpdatePacket(sectionposition, shortset, chunksection, this.resendLight);
+-
+-                    this.broadcast(packetplayoutmultiblockchange, false);
+-                    packetplayoutmultiblockchange.runUpdates((blockposition1, iblockdata1) -> {
+-                        this.broadcastBlockEntityIfNeeded(world, blockposition1, iblockdata1);
+-                    });
++                ShortSet shortset = this.changedBlocksPerSection[j];
++                if (shortset!=null){
++                    int k = this.levelHeightAccessor.getSectionYFromSectionIndex(j);
++                    SectionPos sectionposition = SectionPos.of(chunk.getPos(), k);
++
++                    if (shortset.size() == 1) {
++                        BlockPos blockposition = sectionposition.relativeToBlockPos(shortset.iterator().nextShort());
++                        BlockState iblockdata = world.getBlockState(blockposition);
++
++                        this.broadcast(new ClientboundBlockUpdatePacket(blockposition, iblockdata), false);
++                        this.broadcastBlockEntityIfNeeded(world, blockposition, iblockdata);
++                    } else {
++                        LevelChunkSection chunksection = chunk.getSection(j);
++                        ClientboundSectionBlocksUpdatePacket packetplayoutmultiblockchange = new ClientboundSectionBlocksUpdatePacket(sectionposition, shortset, chunksection, this.resendLight);
++
++                        this.broadcast(packetplayoutmultiblockchange, false);
++                        packetplayoutmultiblockchange.runUpdates((blockposition1, iblockdata1) -> {
++                            this.broadcastBlockEntityIfNeeded(world, blockposition1, iblockdata1);
++                        });
++                    }
++                    this.changedBlocksPerSection[j] = null;
+                 }
+-                this.changedBlocksPerSection[j] = null;
+             }
+ 
+             this.hasChangedSections = false;
+diff --git a/src/main/java/net/minecraft/server/level/ServerChunkCache.java b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+index 686852f5cb6303381c45a673a0daf79a2d3a9dfe..4ac0a4eb95ab34a3409b66ee8d96af0846c6ec8c 100644
+--- a/src/main/java/net/minecraft/server/level/ServerChunkCache.java
++++ b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+@@ -843,12 +843,10 @@ public class ServerChunkCache extends ChunkSource {
+             if (chunkMap.playerMobDistanceMap != null && _pufferfish_spawnCountsReady.getAndSet(false)) {
+                 net.minecraft.server.MinecraftServer.getServer().mobSpawnExecutor.submit(() -> {
+                     int mapped = distanceManager.getNaturalSpawnChunkCount();
+-                    io.papermc.paper.util.maplist.IteratorSafeOrderedReferenceSet.Iterator<Entity> objectiterator =
+-                            level.entityTickList.entities.iterator(io.papermc.paper.util.maplist.IteratorSafeOrderedReferenceSet.ITERATOR_FLAG_SEE_ADDITIONS);
++                    Iterator<Entity> objectiterator = level.entityTickList.entities.iterator();
+                     gg.pufferfish.pufferfish.util.IterableWrapper<Entity> wrappedIterator =
+                             new gg.pufferfish.pufferfish.util.IterableWrapper<>(objectiterator);
+                     lastSpawnState = NaturalSpawner.createState(mapped, wrappedIterator, this::getFullChunk, null, true);
+-                    objectiterator.finishedIterating();
+                     _pufferfish_spawnCountsReady.set(true);
+                 });
+             }
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 28bf7671dafa15dade48e456bafeb30b073f0942..5640f1d3f09ae9677d250380ff42af93fa67d142 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -725,13 +725,15 @@ public class ServerLevel extends Level implements WorldGenLevel {
+ 
+             org.spigotmc.ActivationRange.activateEntities(this); // Spigot
+             //timings.entityTick.startTiming(); // Spigot // Purpur
++            for (int k = 0; k < Math.max(256,this.entityTickList.entities.size()); k++) {
++                MinecraftServer.getServer().executeMidTickTasks(); // Tuinity - execute chunk tasks mid tick //Hearse -- Move up
++            }
+             this.entityTickList.forEach((entity) -> {
+-                entity.activatedPriorityReset = false; // Pufferfish - DAB
++                entity.activatedPriorityReset = false;
+                 if (!entity.isRemoved()) {
+-                    if (false && this.shouldDiscardEntity(entity)) { // CraftBukkit - We prevent spawning in general, so this butchering is not needed
++                    if (false) { // CraftBukkit - We prevent spawning in general, so this butchering is not needed
+                         entity.discard();
+                     } else {
+-                        MinecraftServer.getServer().executeMidTickTasks(); // Tuinity - execute chunk tasks mid tick //Hearse -- Move up
+                         if (MinecraftServer.getServer().asyncEntityEnabled){
+                             MinecraftServer.getServer().asyncExecutor.execute(()->{
+                                 entity.checkDespawn();
+@@ -1726,57 +1728,55 @@ public class ServerLevel extends Level implements WorldGenLevel {
+ 
+     @Override
+     public void sendBlockUpdated(BlockPos pos, BlockState oldState, BlockState newState, int flags) {
+-        synchronized (this.navigatingMobs){
+-            if (this.isUpdatingNavigations) {
+-                return;
+-                //Util.logAndPauseIfInIde("recursive call to sendBlockUpdated", new IllegalStateException("recursive call to sendBlockUpdated"));
+-            }
++        if (this.isUpdatingNavigations) {
++            return;
++            //Util.logAndPauseIfInIde("recursive call to sendBlockUpdated", new IllegalStateException("recursive call to sendBlockUpdated"));
++        }
+ 
+-            this.getChunkSource().blockChanged(pos);
+-            if(this.paperConfig().misc.updatePathfindingOnBlockUpdate) { // Paper - option to disable pathfinding updates
+-                VoxelShape voxelshape = oldState.getCollisionShape(this, pos);
+-                VoxelShape voxelshape1 = newState.getCollisionShape(this, pos);
++        this.getChunkSource().blockChanged(pos);
++        if (this.paperConfig().misc.updatePathfindingOnBlockUpdate) { // Paper - option to disable pathfinding updates
++            VoxelShape voxelshape = oldState.getCollisionShape(this, pos);
++            VoxelShape voxelshape1 = newState.getCollisionShape(this, pos);
+ 
+-                if (Shapes.joinIsNotEmpty(voxelshape, voxelshape1, BooleanOp.NOT_SAME)) {
+-                    List<PathNavigation> list = new ObjectArrayList();
+-                    Iterator iterator = this.navigatingMobs.iterator();
++            if (Shapes.joinIsNotEmpty(voxelshape, voxelshape1, BooleanOp.NOT_SAME)) {
++                List<PathNavigation> list = new ObjectArrayList();
++                Iterator iterator = this.navigatingMobs.iterator();
+ 
+-                    while (iterator.hasNext()) {
+-                        // CraftBukkit start - fix SPIGOT-6362
+-                        Mob entityinsentient;
+-                        try {
+-                            entityinsentient = (Mob) iterator.next();
+-                        } catch (java.util.ConcurrentModificationException ex) {
+-                            // This can happen because the pathfinder update below may trigger a chunk load, which in turn may cause more navigators to register
+-                            // In this case we just run the update again across all the iterators as the chunk will then be loaded
+-                            // As this is a relative edge case it is much faster than copying navigators (on either read or write)
+-                            this.sendBlockUpdated(pos, oldState, newState, flags);
+-                            return;
+-                        }
+-                        // CraftBukkit end
+-                        PathNavigation navigationabstract = entityinsentient.getNavigation();
++                while (iterator.hasNext()) {
++                    // CraftBukkit start - fix SPIGOT-6362
++                    Mob entityinsentient;
++                    try {
++                        entityinsentient = (Mob) iterator.next();
++                    } catch (java.util.ConcurrentModificationException ex) {
++                        // This can happen because the pathfinder update below may trigger a chunk load, which in turn may cause more navigators to register
++                        // In this case we just run the update again across all the iterators as the chunk will then be loaded
++                        // As this is a relative edge case it is much faster than copying navigators (on either read or write)
++                        this.sendBlockUpdated(pos, oldState, newState, flags);
++                        return;
++                    }
++                    // CraftBukkit end
++                    PathNavigation navigationabstract = entityinsentient.getNavigation();
+ 
+-                        if (navigationabstract.shouldRecomputePath(pos)) {
+-                            list.add(navigationabstract);
+-                        }
++                    if (navigationabstract.shouldRecomputePath(pos)) {
++                        list.add(navigationabstract);
+                     }
++                }
+ 
+-                    try {
+-                        this.isUpdatingNavigations = true;
+-                        iterator = list.iterator();
++                try {
++                    this.isUpdatingNavigations = true;
++                    iterator = list.iterator();
+ 
+-                        while (iterator.hasNext()) {
+-                            PathNavigation navigationabstract1 = (PathNavigation) iterator.next();
++                    while (iterator.hasNext()) {
++                        PathNavigation navigationabstract1 = (PathNavigation) iterator.next();
+ 
+-                            navigationabstract1.recomputePath();
+-                        }
+-                    } finally {
+-                        this.isUpdatingNavigations = false;
++                        navigationabstract1.recomputePath();
+                     }
+-
++                } finally {
++                    this.isUpdatingNavigations = false;
+                 }
+-            } // Paper
+-        }
++
++            }
++        } // Paper
+     }
+ 
+     @Override
+diff --git a/src/main/java/net/minecraft/world/level/entity/EntityTickList.java b/src/main/java/net/minecraft/world/level/entity/EntityTickList.java
+index 57fcf3910f45ce371ac2e237b277b1034caaac4e..6bf67d420744ca4fa886e42faaa288c9a05c83df 100644
+--- a/src/main/java/net/minecraft/world/level/entity/EntityTickList.java
++++ b/src/main/java/net/minecraft/world/level/entity/EntityTickList.java
+@@ -1,29 +1,23 @@
+ package net.minecraft.world.level.entity;
+ 
+-import it.unimi.dsi.fastutil.ints.Int2ObjectLinkedOpenHashMap;
+-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+-import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
+-import java.util.function.Consumer;
+-import javax.annotation.Nullable;
++import it.unimi.dsi.fastutil.objects.ObjectArraySet;
++import it.unimi.dsi.fastutil.objects.ObjectSets;
+ import net.minecraft.world.entity.Entity;
+ 
+-public class EntityTickList {
+-    public final io.papermc.paper.util.maplist.IteratorSafeOrderedReferenceSet<Entity> entities = new io.papermc.paper.util.maplist.IteratorSafeOrderedReferenceSet<>(true); // Paper - rewrite this, always keep this updated - why would we EVER tick an entity that's not ticking? // Pufferfish - private->public
+-
+-    private void ensureActiveIsNotIterated() {
+-        // Paper - replace with better logic, do not delay removals
++import java.util.ArrayList;
++import java.util.Set;
++import java.util.function.Consumer;
+ 
+-    }
++public class EntityTickList {
++    public final Set<Entity> entities = ObjectSets.synchronize(new ObjectArraySet<>());
+ 
+     public void add(Entity entity) {
+         io.papermc.paper.util.TickThread.ensureTickThread("Asynchronous entity ticklist addition"); // Paper
+-        this.ensureActiveIsNotIterated();
+         this.entities.add(entity); // Paper - replace with better logic, do not delay removals/additions
+     }
+ 
+     public void remove(Entity entity) {
+         io.papermc.paper.util.TickThread.ensureTickThread("Asynchronous entity ticklist removal"); // Paper
+-        this.ensureActiveIsNotIterated();
+         this.entities.remove(entity); // Paper - replace with better logic, do not delay removals/additions
+     }
+ 
+@@ -33,17 +27,6 @@ public class EntityTickList {
+ 
+     public void forEach(Consumer<Entity> action) {
+         io.papermc.paper.util.TickThread.ensureTickThread("Asynchronous entity ticklist iteration"); // Paper
+-        // Paper start - replace with better logic, do not delay removals/additions
+-        // To ensure nothing weird happens with dimension travelling, do not iterate over new entries...
+-        // (by dfl iterator() is configured to not iterate over new entries)
+-        io.papermc.paper.util.maplist.IteratorSafeOrderedReferenceSet.Iterator<Entity> iterator = this.entities.iterator();
+-        try {
+-            while (iterator.hasNext()) {
+-                action.accept(iterator.next());
+-            }
+-        } finally {
+-            iterator.finishedIterating();
+-        }
+-        // Paper end - replace with better logic, do not delay removals/additions
++        new ArrayList<>(this.entities).parallelStream().forEach(action);
+     }
+ }
+diff --git a/src/main/java/net/minecraft/world/level/pathfinder/NodeEvaluator.java b/src/main/java/net/minecraft/world/level/pathfinder/NodeEvaluator.java
+index abd78c107c49bfcc7149a4f65ac7007a5137333b..890f510d34fe81b2afbc8b66e974fd427ac6145a 100644
+--- a/src/main/java/net/minecraft/world/level/pathfinder/NodeEvaluator.java
++++ b/src/main/java/net/minecraft/world/level/pathfinder/NodeEvaluator.java
+@@ -32,15 +32,8 @@ public abstract class NodeEvaluator {
+     }
+ 
+     public void done() {
+-        if (MinecraftServer.getServer().asyncEntityEnabled){
+-            MinecraftServer.getServer().asyncExecutor.submitCleanTask(()->{
+-                this.level = null;
+-                this.mob = null;
+-            });
+-        }else{
+-            this.level = null;
+-            this.mob = null;
+-        }
++        this.level = null;
++        this.mob = null;
+     }
+ 
+     protected Node getNode(BlockPos pos) {
+diff --git a/src/main/java/net/minecraft/world/level/pathfinder/PathFinder.java b/src/main/java/net/minecraft/world/level/pathfinder/PathFinder.java
+index 0f49ddf4796977a234e35b1a8d03a59642e18763..eee47eb38754766f5ca3ff98cc4f875a7afba686 100644
+--- a/src/main/java/net/minecraft/world/level/pathfinder/PathFinder.java
++++ b/src/main/java/net/minecraft/world/level/pathfinder/PathFinder.java
+@@ -1,24 +1,15 @@
+ package net.minecraft.world.level.pathfinder;
+ 
+-import com.google.common.collect.ImmutableSet;
+ import com.google.common.collect.Lists;
+-import com.google.common.collect.Sets;
+-import java.util.Comparator;
+-import java.util.List;
+-import java.util.Map;
+-import java.util.Optional;
+-import java.util.Set;
+-import java.util.concurrent.locks.ReadWriteLock;
+-import java.util.concurrent.locks.ReentrantReadWriteLock;
+-import java.util.function.Function;
+-import java.util.stream.Collectors;
+-import javax.annotation.Nullable;
+ import net.minecraft.core.BlockPos;
+-import net.minecraft.server.MinecraftServer;
+ import net.minecraft.util.profiling.ProfilerFiller;
+-import net.minecraft.util.profiling.metrics.MetricCategory;
+ import net.minecraft.world.entity.Mob;
+ import net.minecraft.world.level.PathNavigationRegion;
++import javax.annotation.Nullable;
++import java.util.Comparator;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
+ 
+ public class PathFinder {
+     private static final float FUDGING = 1.5F;
+@@ -34,7 +25,7 @@ public class PathFinder {
+     }
+ 
+     @Nullable
+-    public Path findPath(PathNavigationRegion world, Mob mob, Set<BlockPos> positions, float followRange, int distance, float rangeMultiplier) {
++    public synchronized Path findPath(PathNavigationRegion world, Mob mob, Set<BlockPos> positions, float followRange, int distance, float rangeMultiplier) {
+         this.openSet.clear();
+         this.nodeEvaluator.prepare(world, mob);
+         Node node = this.nodeEvaluator.getStart();
+@@ -79,10 +70,9 @@ public class PathFinder {
+             node.closed = true;
+ 
+             // Paper start - optimize collection
+-            for(int i1 = 0; i1 < positions.size(); i1++) {
+-                final Map.Entry<Target, BlockPos> entry = positions.get(i1);
++            for (final Map.Entry<Target, BlockPos> entry : positions) {
+                 Target target = entry.getKey();
+-                if (node.distanceManhattan(target) <= (float)distance) {
++                if (node.distanceManhattan(target) <= (float) distance) {
+                     target.setReached();
+                     entryList.add(entry);
+                     // Paper end
