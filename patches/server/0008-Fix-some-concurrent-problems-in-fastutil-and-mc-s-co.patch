@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Sat, 7 Jan 2023 20:16:20 +0800
+Subject: [PATCH] Fix some concurrent problems in fastutil and mc's code
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkHolder.java b/src/main/java/net/minecraft/server/level/ChunkHolder.java
+index 997975b2578550ea3fccb0159f84edab484da1bf..be4e1a4a3ec067ef40551ee19677c294c6438dc8 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkHolder.java
++++ b/src/main/java/net/minecraft/server/level/ChunkHolder.java
+@@ -2,6 +2,7 @@ package net.minecraft.server.level;
+ 
+ import com.mojang.datafixers.util.Either;
+ import com.mojang.datafixers.util.Pair;
++import it.unimi.dsi.fastutil.shorts.ShortArraySet;
+ import it.unimi.dsi.fastutil.shorts.ShortOpenHashSet;
+ import it.unimi.dsi.fastutil.shorts.ShortSet;
+ import java.util.ArrayList;
+@@ -317,7 +318,7 @@ public class ChunkHolder {
+                         this.broadcastBlockEntityIfNeeded(world, blockposition, iblockdata);
+                     } else {
+                         LevelChunkSection chunksection = chunk.getSection(j);
+-                        ClientboundSectionBlocksUpdatePacket packetplayoutmultiblockchange = new ClientboundSectionBlocksUpdatePacket(sectionposition, shortset, chunksection, this.resendLight);
++                        ClientboundSectionBlocksUpdatePacket packetplayoutmultiblockchange = new ClientboundSectionBlocksUpdatePacket(sectionposition,new ShortArraySet(shortset), chunksection, this.resendLight);
+ 
+                         this.broadcast(packetplayoutmultiblockchange, false);
+                         packetplayoutmultiblockchange.runUpdates((blockposition1, iblockdata1) -> {
+diff --git a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+index 4b58e998a815f0ef4a1007eacf4397f226a07fa2..395e56c02334b98ce332917f433ca0cabf884ad5 100644
+--- a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -16,6 +16,8 @@ import java.util.function.Supplier;
+ import java.util.stream.Stream;
+ import java.util.stream.StreamSupport;
+ import javax.annotation.Nullable;
++
++import net.himeki.mcmtfabric.parallelised.fastutil.Int2ObjectConcurrentHashMap;
+ import net.minecraft.CrashReport;
+ import net.minecraft.CrashReportCategory;
+ import net.minecraft.ReportedException;
+@@ -113,7 +115,7 @@ public class LevelChunk extends ChunkAccess {
+         this.tickersInLevel = Maps.newConcurrentMap();
+         this.clientLightReady = false;
+         this.level = (ServerLevel) world; // CraftBukkit - type
+-        this.gameEventListenerRegistrySections = new Int2ObjectOpenHashMap();
++        this.gameEventListenerRegistrySections = new Int2ObjectConcurrentHashMap<>();
+         Heightmap.Types[] aheightmap_type = Heightmap.Types.values();
+         int j = aheightmap_type.length;
+ 
