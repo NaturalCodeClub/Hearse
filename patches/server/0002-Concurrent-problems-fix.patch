@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Sat, 7 Jan 2023 14:03:04 +0800
+Subject: [PATCH] Concurrent problems fix
+
+
+diff --git a/src/main/java/net/minecraft/util/ThreadingDetector.java b/src/main/java/net/minecraft/util/ThreadingDetector.java
+index b6e98aaebe57453b8eceaa633a989aa24409830f..60162cccf765800c6172d1544f2cd9bcf30cbd97 100644
+--- a/src/main/java/net/minecraft/util/ThreadingDetector.java
++++ b/src/main/java/net/minecraft/util/ThreadingDetector.java
+@@ -17,7 +17,7 @@ import org.slf4j.Logger;
+ public class ThreadingDetector {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private final String name;
+-    private final Semaphore lock = new Semaphore(1);
++    private final Semaphore lock = new Semaphore(255);
+     private final Lock stackTraceLock = new ReentrantLock();
+     @Nullable
+     private volatile Thread threadThatFailedToAcquire;
