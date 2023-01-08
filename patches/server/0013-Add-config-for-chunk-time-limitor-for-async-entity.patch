@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Sun, 8 Jan 2023 14:46:03 +0800
+Subject: [PATCH] Add config for chunk time limitor for async entity
+
+
+diff --git a/src/main/java/net/himeki/mcmtfabric/DebugHookTerminator.java b/src/main/java/net/himeki/mcmtfabric/DebugHookTerminator.java
+index 8286ae2ac701f004108af08707ab85b82019a6ea..3833815418502200da37fa39081e025f04f170f0 100644
+--- a/src/main/java/net/himeki/mcmtfabric/DebugHookTerminator.java
++++ b/src/main/java/net/himeki/mcmtfabric/DebugHookTerminator.java
+@@ -1,29 +1,28 @@
+ package net.himeki.mcmtfabric;
+ 
+-import java.util.ArrayList;
+-import java.util.List;
+-import java.util.concurrent.CompletableFuture;
+-import java.util.concurrent.ExecutionException;
+-import java.util.concurrent.TimeoutException;
+-import java.util.concurrent.atomic.AtomicBoolean;
+-import java.util.concurrent.atomic.AtomicLong;
+-import java.util.concurrent.locks.LockSupport;
+-import java.util.function.BooleanSupplier;
+-
+ import co.m2ek4u.hearse.HearseConfig;
++import com.mojang.datafixers.util.Either;
+ import net.minecraft.nbt.CompoundTag;
+ import net.minecraft.server.level.ChunkHolder;
+ import net.minecraft.server.level.ServerChunkCache;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.chunk.ChunkAccess;
+-import net.minecraft.world.level.chunk.ChunkStatus;
+ import net.minecraft.world.level.chunk.LevelChunk;
+ import net.minecraft.world.level.chunk.ProtoChunk;
+ import net.minecraft.world.level.chunk.storage.ChunkSerializer;
+ import org.apache.logging.log4j.LogManager;
+ import org.apache.logging.log4j.Logger;
+-import com.mojang.datafixers.util.Either;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.ExecutionException;
++import java.util.concurrent.TimeoutException;
++import java.util.concurrent.atomic.AtomicBoolean;
++import java.util.concurrent.atomic.AtomicLong;
++import java.util.concurrent.locks.LockSupport;
++import java.util.function.BooleanSupplier;
+ 
+ /* 1.15.2 code; AKA the only thing that changed
+ import net.minecraft.world.biome.provider.SingleBiomeProviderSettings;

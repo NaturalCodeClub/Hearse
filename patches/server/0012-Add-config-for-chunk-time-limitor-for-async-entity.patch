@@ -1,0 +1,84 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Sun, 8 Jan 2023 14:41:19 +0800
+Subject: [PATCH] Add config for chunk time limitor for async entity
+
+
+diff --git a/src/main/java/net/himeki/mcmtfabric/DebugHookTerminator.java b/src/main/java/net/himeki/mcmtfabric/DebugHookTerminator.java
+index a558aff5b05a13402a9f24f3abe652d2a056fcac..8286ae2ac701f004108af08707ab85b82019a6ea 100644
+--- a/src/main/java/net/himeki/mcmtfabric/DebugHookTerminator.java
++++ b/src/main/java/net/himeki/mcmtfabric/DebugHookTerminator.java
+@@ -43,6 +43,8 @@ public class DebugHookTerminator {
+ 
+     private static volatile boolean bypassLoadTarget = false;
+     private static long timeoutCount = HearseConfig.getLong("chunk-time-out-count-for-async-entity",3000);
++    private static boolean enableTimeOut = HearseConfig.getBoolean("chunk-time-out-for-async-entity-enabled",true);
++    private static boolean blankReturnWhenTimeOut = HearseConfig.getBoolean("chunk-blank-return-for-async-entity-when-timeouted",true);
+ 
+     public static class BrokenChunkLocator {
+         long chunkPos;
+@@ -84,7 +86,7 @@ public class DebugHookTerminator {
+                     }
+                     break;
+                 }
+-                if (failcount++ < timeoutCount) {
++                if (!enableTimeOut || failcount++ < timeoutCount) {
+                     if (Thread.currentThread().getName().equals(mainThread)) {
+                         mainThreadChunkLoadCount.incrementAndGet();
+                     }
+@@ -93,44 +95,20 @@ public class DebugHookTerminator {
+                 } else {
+                     LOGGER.error("", new TimeoutException("Error fetching chunk " + chunkpos));
+                     bypassLoadTarget = true;
+-                    if (true) {
+-                        if (false) {
+-                            LevelChunk out = new LevelChunk(scp.getLevel(), new ChunkPos(chunkpos));
+-                            completableFuture.complete(Either.left(out));
+-                        } else {
+-                            try {
+-                                CompoundTag cnbt = scp.chunkMap.read(new ChunkPos(chunkpos)).get().get();
+-                                if (cnbt != null) {
+-                                    ProtoChunk cp = ChunkSerializer.read((ServerLevel) scp.getLevel(), scp.chunkMap.getPoiManager(),new ChunkPos(chunkpos), cnbt);
+-                                    completableFuture.complete(Either.left(new LevelChunk((ServerLevel) scp.getLevel(), cp, null)));
+-                                }
+-                            } catch (InterruptedException | ExecutionException e) {
+-                                e.printStackTrace();
+-                            }
+-                            completableFuture.complete(ChunkHolder.UNLOADED_CHUNK);
+-                        }
++                    if (blankReturnWhenTimeOut) {
++                        LevelChunk out = new LevelChunk(scp.getLevel(), new ChunkPos(chunkpos));
++                        completableFuture.complete(Either.left(out));
+                     } else {
+-                        System.err.println(completableFuture.toString());
+-                        ChunkHolder chunkholder = scp.chunkMap.getVisibleChunkIfPresent(chunkpos);
+-                        CompletableFuture<?> firstBroke = null;
+-                        for (ChunkStatus cs : ChunkStatus.getStatusList()) {
+-                            CompletableFuture<Either<ChunkAccess, ChunkHolder.ChunkLoadingFailure>> cf = chunkholder.getFutureIfPresent(cs);
+-                            if (cf == ChunkHolder.UNLOADED_CHUNK_FUTURE) {
+-                                System.out.println("Status: " + cs.toString() + " is not yet loaded");
+-                            } else {
+-                                System.out.println("Status: " + cs.toString() + " is " + cf.toString());
+-                                if (firstBroke == null && !cf.toString().contains("Completed normally")) {
+-                                    firstBroke = cf;
+-                                }
++                        try {
++                            CompoundTag cnbt = scp.chunkMap.read(new ChunkPos(chunkpos)).get().get();
++                            if (cnbt != null) {
++                                ProtoChunk cp = ChunkSerializer.read((ServerLevel) scp.getLevel(), scp.chunkMap.getPoiManager(),new ChunkPos(chunkpos), cnbt);
++                                completableFuture.complete(Either.left(new LevelChunk((ServerLevel) scp.getLevel(), cp, null)));
+                             }
++                        } catch (InterruptedException | ExecutionException e) {
++                            e.printStackTrace();
+                         }
+-                        breaks.add(new BrokenChunkLocator(chunkpos, completableFuture, firstBroke));
+-                        completableFuture.complete(Either.right(new ChunkHolder.ChunkLoadingFailure() {
+-                            @Override
+-                            public String toString() {
+-                                return "TIMEOUT";
+-                            }
+-                        }));
++                        completableFuture.complete(ChunkHolder.UNLOADED_CHUNK);
+                     }
+                 }
+             }
