@@ -1,0 +1,712 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Sun, 8 Jan 2023 14:23:49 +0800
+Subject: [PATCH] Use MCMT's debug hook to prevent something bad happen
+
+
+diff --git a/src/main/java/co/m2ek4u/hearse/HearseConfig.java b/src/main/java/co/m2ek4u/hearse/HearseConfig.java
+index c2760d56ede46632b0225501ca93470871b45853..4150d83057e8ee5b09f6598344d12698d8f5a5ad 100644
+--- a/src/main/java/co/m2ek4u/hearse/HearseConfig.java
++++ b/src/main/java/co/m2ek4u/hearse/HearseConfig.java
+@@ -28,6 +28,11 @@ public class HearseConfig {
+         }
+     }
+ 
++    public static long getLong(String key,int defaultValue){
++        configEntry.addDefault(key,defaultValue);
++        return configEntry.getLong(key,defaultValue);
++    }
++
+     public static int getInt(String key,int defaultValue){
+         configEntry.addDefault(key,defaultValue);
+         return configEntry.getInt(key);
+diff --git a/src/main/java/net/himeki/mcmtfabric/DebugHookTerminator.java b/src/main/java/net/himeki/mcmtfabric/DebugHookTerminator.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..a558aff5b05a13402a9f24f3abe652d2a056fcac
+--- /dev/null
++++ b/src/main/java/net/himeki/mcmtfabric/DebugHookTerminator.java
+@@ -0,0 +1,139 @@
++package net.himeki.mcmtfabric;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.ExecutionException;
++import java.util.concurrent.TimeoutException;
++import java.util.concurrent.atomic.AtomicBoolean;
++import java.util.concurrent.atomic.AtomicLong;
++import java.util.concurrent.locks.LockSupport;
++import java.util.function.BooleanSupplier;
++
++import co.m2ek4u.hearse.HearseConfig;
++import net.minecraft.nbt.CompoundTag;
++import net.minecraft.server.level.ChunkHolder;
++import net.minecraft.server.level.ServerChunkCache;
++import net.minecraft.server.level.ServerLevel;
++import net.minecraft.world.level.ChunkPos;
++import net.minecraft.world.level.chunk.ChunkAccess;
++import net.minecraft.world.level.chunk.ChunkStatus;
++import net.minecraft.world.level.chunk.LevelChunk;
++import net.minecraft.world.level.chunk.ProtoChunk;
++import net.minecraft.world.level.chunk.storage.ChunkSerializer;
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++import com.mojang.datafixers.util.Either;
++
++/* 1.15.2 code; AKA the only thing that changed
++import net.minecraft.world.biome.provider.SingleBiomeProviderSettings;
++/* */
++
++// TODO Should be renamed ChunkRepairHookTerminator (Note requres coremod edit)
++
++
++/**
++ * Handles chunk forcing in scenarios where world corruption has occured
++ *
++ * @author jediminer543
++ */
++public class DebugHookTerminator {
++
++    private static final Logger LOGGER = LogManager.getLogger();
++
++    private static volatile boolean bypassLoadTarget = false;
++    private static long timeoutCount = HearseConfig.getLong("chunk-time-out-count-for-async-entity",3000);
++
++    public static class BrokenChunkLocator {
++        long chunkPos;
++        CompletableFuture<?> maincf;
++        CompletableFuture<?> brokecf;
++        public BrokenChunkLocator(long chunkPos, CompletableFuture<?> maincf, CompletableFuture<?> brokecf) {
++            super();
++            this.chunkPos = chunkPos;
++            this.maincf = maincf;
++            this.brokecf = brokecf;
++        }
++        public long getChunkPos() {
++            return chunkPos;
++        }
++
++    }
++
++    public static List<BrokenChunkLocator> breaks = new ArrayList<>();
++
++    public static boolean isBypassLoadTarget() {
++        return bypassLoadTarget;
++    }
++
++    public static AtomicBoolean mainThreadChunkLoad = new AtomicBoolean();
++    public static AtomicLong mainThreadChunkLoadCount = new AtomicLong();
++    public static String mainThread = "Server thread";
++
++    public static void chunkLoadDrive(ServerChunkCache.MainThreadExecutor executor, BooleanSupplier isDone, ServerChunkCache scp, CompletableFuture<Either<ChunkAccess, ChunkHolder.ChunkLoadingFailure>> completableFuture, long chunkpos) {
++        int failcount = 0;
++        if (Thread.currentThread().getName().equals(mainThread)) {
++            mainThreadChunkLoadCount.set(0);
++            mainThreadChunkLoad.set(true);
++        }
++        while (!isDone.getAsBoolean()) {
++            if (!executor.pollTask()) {
++                if (isDone.getAsBoolean()) {
++                    if (Thread.currentThread().getName().equals(mainThread)) {
++                        mainThreadChunkLoad.set(false);
++                    }
++                    break;
++                }
++                if (failcount++ < timeoutCount) {
++                    if (Thread.currentThread().getName().equals(mainThread)) {
++                        mainThreadChunkLoadCount.incrementAndGet();
++                    }
++                    Thread.yield();
++                    LockSupport.parkNanos("THE END IS ~~NEVER~~ LOADING", 100000L);
++                } else {
++                    LOGGER.error("", new TimeoutException("Error fetching chunk " + chunkpos));
++                    bypassLoadTarget = true;
++                    if (true) {
++                        if (false) {
++                            LevelChunk out = new LevelChunk(scp.getLevel(), new ChunkPos(chunkpos));
++                            completableFuture.complete(Either.left(out));
++                        } else {
++                            try {
++                                CompoundTag cnbt = scp.chunkMap.read(new ChunkPos(chunkpos)).get().get();
++                                if (cnbt != null) {
++                                    ProtoChunk cp = ChunkSerializer.read((ServerLevel) scp.getLevel(), scp.chunkMap.getPoiManager(),new ChunkPos(chunkpos), cnbt);
++                                    completableFuture.complete(Either.left(new LevelChunk((ServerLevel) scp.getLevel(), cp, null)));
++                                }
++                            } catch (InterruptedException | ExecutionException e) {
++                                e.printStackTrace();
++                            }
++                            completableFuture.complete(ChunkHolder.UNLOADED_CHUNK);
++                        }
++                    } else {
++                        System.err.println(completableFuture.toString());
++                        ChunkHolder chunkholder = scp.chunkMap.getVisibleChunkIfPresent(chunkpos);
++                        CompletableFuture<?> firstBroke = null;
++                        for (ChunkStatus cs : ChunkStatus.getStatusList()) {
++                            CompletableFuture<Either<ChunkAccess, ChunkHolder.ChunkLoadingFailure>> cf = chunkholder.getFutureIfPresent(cs);
++                            if (cf == ChunkHolder.UNLOADED_CHUNK_FUTURE) {
++                                System.out.println("Status: " + cs.toString() + " is not yet loaded");
++                            } else {
++                                System.out.println("Status: " + cs.toString() + " is " + cf.toString());
++                                if (firstBroke == null && !cf.toString().contains("Completed normally")) {
++                                    firstBroke = cf;
++                                }
++                            }
++                        }
++                        breaks.add(new BrokenChunkLocator(chunkpos, completableFuture, firstBroke));
++                        completableFuture.complete(Either.right(new ChunkHolder.ChunkLoadingFailure() {
++                            @Override
++                            public String toString() {
++                                return "TIMEOUT";
++                            }
++                        }));
++                    }
++                }
++            }
++        }
++    }
++}
+\ No newline at end of file
+diff --git a/src/main/java/net/himeki/mcmtfabric/parallelised/ChunkLock.java b/src/main/java/net/himeki/mcmtfabric/parallelised/ChunkLock.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..349f9bc949e595e2899f58539b87bec129db5406
+--- /dev/null
++++ b/src/main/java/net/himeki/mcmtfabric/parallelised/ChunkLock.java
+@@ -0,0 +1,53 @@
++package net.himeki.mcmtfabric.parallelised;
++
++import net.minecraft.core.BlockPos;
++import net.minecraft.world.level.ChunkPos;
++import org.apache.commons.lang.ArrayUtils;
++import java.util.Arrays;
++import java.util.Map;
++import java.util.concurrent.ConcurrentHashMap;
++import java.util.concurrent.locks.Lock;
++import java.util.concurrent.locks.ReentrantLock;
++
++public class ChunkLock {
++
++    @Deprecated
++    public static final ChunkLock INSTANCE = new ChunkLock();
++
++    Map<Long, Lock> chunkLockCache = new ConcurrentHashMap<>();
++
++    //TODO Add cleanup thread
++
++    public void cleanup() {
++        chunkLockCache = new ConcurrentHashMap<>();
++    }
++
++    public long[] lock(BlockPos bp, int radius) {
++        long cp = new ChunkPos(bp).toLong();
++        return lock(cp, radius);
++    }
++
++    public long[] lock(long cp, int radius) {
++        long[] targets = new long[(1 + radius * 2) * (1 + radius * 2)];
++        int pos = 0;
++        for (int i = -radius; i <= radius; i++) {
++            for (int j = -radius; j <= radius; j++) {
++                long curr = cp + ChunkPos.asLong(i, j); // Can error at the boundaries but eh
++                targets[pos++] = curr;
++            }
++        }
++        Arrays.sort(targets);
++        for (long l : targets) {
++            chunkLockCache.computeIfAbsent(l, x -> new ReentrantLock()).lock();
++        }
++        return targets;
++    }
++
++    public void unlock(long[] locks) {
++        ArrayUtils.reverse(locks);
++        for (long l : locks) {
++            chunkLockCache.get(l).unlock();
++        }
++    }
++
++}
+\ No newline at end of file
+diff --git a/src/main/java/net/himeki/mcmtfabric/parallelised/ParaServerChunkProvider.java b/src/main/java/net/himeki/mcmtfabric/parallelised/ParaServerChunkProvider.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c84aef8aca9544a24f98b91de08f36ed54204bca
+--- /dev/null
++++ b/src/main/java/net/himeki/mcmtfabric/parallelised/ParaServerChunkProvider.java
+@@ -0,0 +1,222 @@
++package net.himeki.mcmtfabric.parallelised;
++
++import com.mojang.datafixers.DataFixer;
++import io.papermc.paper.util.TickThread;
++import net.minecraft.server.level.ServerChunkCache;
++import net.minecraft.server.level.ServerLevel;
++import net.minecraft.server.level.progress.ChunkProgressListener;
++import net.minecraft.world.level.ChunkPos;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.chunk.ChunkAccess;
++import net.minecraft.world.level.chunk.ChunkGenerator;
++import net.minecraft.world.level.chunk.ChunkStatus;
++import net.minecraft.world.level.entity.ChunkStatusUpdateListener;
++import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
++import net.minecraft.world.level.storage.DimensionDataStorage;
++import net.minecraft.world.level.storage.LevelStorageSource;
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++import org.apache.logging.log4j.Marker;
++import org.apache.logging.log4j.MarkerManager;
++
++import javax.annotation.Nullable;
++import java.lang.ref.WeakReference;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.ConcurrentHashMap;
++import java.util.concurrent.Executor;
++import java.util.concurrent.atomic.AtomicInteger;
++import java.util.concurrent.locks.ReentrantLock;
++import java.util.function.Supplier;
++
++
++/* 1.16.1 code; AKA the only thing that changed  */
++//import net.minecraft.world.storage.SaveFormat.LevelSave;
++/* */
++
++/* 1.15.2 code; AKA the only thing that changed
++import java.io.File;
++/* */
++
++public class ParaServerChunkProvider extends ServerChunkCache {
++
++    protected ConcurrentHashMap<ChunkCacheAddress, ChunkCacheLine> chunkCache = new ConcurrentHashMap<ChunkCacheAddress, ChunkCacheLine>();
++    protected AtomicInteger access = new AtomicInteger(Integer.MIN_VALUE);
++
++    private static final int CACHE_DURATION_INTERVAL = 50; // ms, multiplies CACHE_DURATION
++    protected static final int CACHE_DURATION = 200; // Duration in ticks (ish...-- 50ms) for cached chucks to live
++
++    private static final int HASH_PRIME = 16777619;
++    private static final int HASH_INIT = 0x811c9dc5;
++
++    protected Thread cacheThread;
++    protected ChunkLock loadingChunkLock = new ChunkLock();
++    Logger log = LogManager.getLogger();
++    Marker chunkCleaner = MarkerManager.getMarker("ChunkCleaner");
++    private final Level world;
++
++    /* 1.16.1 code; AKA the only thing that changed  */
++    public ParaServerChunkProvider(ServerLevel world, LevelStorageSource.LevelStorageAccess session, DataFixer dataFixer, StructureTemplateManager structureManager, Executor workerExecutor, ChunkGenerator chunkGenerator, int viewDistance, int simulationDistance, boolean dsync, ChunkProgressListener worldGenerationProgressListener, ChunkStatusUpdateListener chunkStatusChangeListener, Supplier<DimensionDataStorage> persistentStateManagerFactory) {
++        super(world, session, dataFixer, structureManager, workerExecutor, chunkGenerator, viewDistance, simulationDistance, dsync, worldGenerationProgressListener, chunkStatusChangeListener, persistentStateManagerFactory);
++        this.world = world;
++        cacheThread = new Thread(this::chunkCacheCleanup, "Chunk Cache Cleaner " + world.dimension().location().getPath());
++        cacheThread.start();
++    }
++
++    /* */
++
++	/* 1.15.2 code; AKA the only thing that changed
++	public ParaServerChunkProvider(ServerWorld worldIn, File worldDirectory, DataFixer dataFixer,
++			TemplateManager templateManagerIn, Executor executorIn, ChunkGenerator<?> chunkGeneratorIn,
++			int viewDistance, IChunkStatusListener p_i51537_8_, Supplier<DimensionSavedDataManager> p_i51537_9_) {
++		super(worldIn, worldDirectory, dataFixer, templateManagerIn, executorIn, chunkGeneratorIn, viewDistance, p_i51537_8_,
++				p_i51537_9_);
++		cacheThread = new Thread(this::chunkCacheCleanup, "Chunk Cache Cleaner " + worldIn.dimension.getType().getId());
++		cacheThread.start();
++	}
++	/* */
++    @Override
++    @Nullable
++    public ChunkAccess getChunk(int chunkX, int chunkZ, ChunkStatus requiredStatus, boolean load) {
++        if (!TickThread.isTickThread()) {
++            return CompletableFuture.supplyAsync(() -> this.getChunk(chunkX, chunkZ, requiredStatus, load), this.mainThreadProcessor).join();
++        }
++
++        long i = ChunkPos.asLong(chunkX, chunkZ);
++
++        ChunkAccess c = lookupChunk(i, requiredStatus, false);
++        if (c != null) {
++            return c;
++        }
++        //log.debug("Missed chunk " + i + " on status "  + requiredStatus.toString());
++        if (chunkCache.containsKey(new ChunkCacheAddress(i, requiredStatus)) && (c = lookupChunk(i, requiredStatus, false)) != null) {
++            return c;
++        }
++        ChunkAccess cl = super.getChunk(chunkX, chunkZ, requiredStatus, load);
++        cacheChunk(i, cl, requiredStatus);
++        return cl;
++    }
++
++    public ChunkAccess lookupChunk(long chunkPos, ChunkStatus status, boolean compute) {
++        int oldAccess = access.getAndIncrement();
++        if (access.get() < oldAccess) { // overflow
++            clearCache();
++            return null;
++        }
++        ChunkCacheLine ccl;
++        ccl = chunkCache.get(new ChunkCacheAddress(chunkPos, status));
++        if (ccl != null) {
++            ccl.updateLastAccess();
++            return ccl.getChunk();
++        }
++        return null;
++
++    }
++
++    public void cacheChunk(long chunkPos, ChunkAccess chunk, ChunkStatus status) {
++        long oldAccess = access.getAndIncrement();
++        if (access.get() < oldAccess) { // overflow
++            clearCache();
++        }
++
++        ChunkCacheLine ccl;
++        if ((ccl = chunkCache.get(new ChunkCacheAddress(chunkPos, status))) != null) {
++            ccl.updateLastAccess();
++            ccl.updateChunkRef(chunk);
++        }
++        ccl = new ChunkCacheLine(chunk);
++        chunkCache.put(new ChunkCacheAddress(chunkPos, status), ccl);
++    }
++
++    public void chunkCacheCleanup() {
++        while (world == null || world.getServer() == null) {
++            log.debug(chunkCleaner, "ChunkCleaner Waiting for startup");
++            try {
++                Thread.sleep(1000);
++            } catch (InterruptedException e) {
++                e.printStackTrace();
++            }
++        }
++        while (world.getServer().isRunning()) {
++            try {
++                Thread.sleep(CACHE_DURATION_INTERVAL * CACHE_DURATION);
++            } catch (InterruptedException e) {
++                e.printStackTrace();
++            }
++
++            clearCache();
++        }
++        log.debug(chunkCleaner, "ChunkCleaner terminating");
++    }
++
++    public void clearCache() {
++        //log.info("Clearing Chunk Cache; Size: " + chunkCache.size());
++        chunkCache.clear(); // Doesn't resize but that's typically good
++    }
++
++    protected class ChunkCacheAddress {
++        protected long chunk_pos;
++        protected int status;
++        protected int hash;
++
++        public ChunkCacheAddress(long chunk_pos, ChunkStatus status) {
++            super();
++            this.chunk_pos = chunk_pos;
++            this.status = status.getIndex();
++            this.hash = makeHash(this.chunk_pos, this.status);
++        }
++
++        @Override
++        public int hashCode() {
++            return hash;
++        }
++
++        @Override
++        public boolean equals(Object obj) {
++            return (obj instanceof ChunkCacheAddress)
++                    && ((ChunkCacheAddress) obj).status == this.status
++                    && ((ChunkCacheAddress) obj).chunk_pos == this.chunk_pos;
++        }
++
++        public int makeHash(long chunk_pos, int status) {
++            int hash = HASH_INIT;
++            hash ^= status;
++            for (int b = 56; b >= 0; b -= 8) {
++                hash ^= (chunk_pos >> b) & 0xff;
++                hash *= HASH_PRIME;
++            }
++            return hash;
++        }
++    }
++
++    protected class ChunkCacheLine {
++        WeakReference<ChunkAccess> chunk;
++        int lastAccess;
++
++        public ChunkCacheLine(ChunkAccess chunk) {
++            this(chunk, access.get());
++        }
++
++        public ChunkCacheLine(ChunkAccess chunk, int lastAccess) {
++            this.chunk = new WeakReference<>(chunk);
++            this.lastAccess = lastAccess;
++        }
++
++        public ChunkAccess getChunk() {
++            return chunk.get();
++        }
++
++        public int getLastAccess() {
++            return lastAccess;
++        }
++
++        public void updateLastAccess() {
++            lastAccess = access.get();
++        }
++
++        public void updateChunkRef(ChunkAccess c) {
++            if (chunk.get() == null) {
++                chunk = new WeakReference<>(c);
++            }
++        }
++    }
++}
+\ No newline at end of file
+diff --git a/src/main/java/net/himeki/mcmtfabric/parallelised/pooling/LockAwareThreadPool.java b/src/main/java/net/himeki/mcmtfabric/parallelised/pooling/LockAwareThreadPool.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1f48436cec90bf7e010c599ec987f6e311d2fed
+--- /dev/null
++++ b/src/main/java/net/himeki/mcmtfabric/parallelised/pooling/LockAwareThreadPool.java
+@@ -0,0 +1,101 @@
++package net.himeki.mcmtfabric.parallelised.pooling;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Map;
++import java.util.concurrent.AbstractExecutorService;
++import java.util.concurrent.ConcurrentHashMap;
++import java.util.concurrent.ConcurrentLinkedDeque;
++import java.util.concurrent.TimeUnit;
++import java.util.concurrent.atomic.AtomicInteger;
++import java.util.concurrent.locks.LockSupport;
++
++public class LockAwareThreadPool extends AbstractExecutorService {
++
++    private volatile boolean isShutdown;
++    private AtomicInteger liveThreads;
++    private AtomicInteger blockedThreads;
++    private ConcurrentLinkedDeque<Runnable> taskQueue;
++    private Map<LockAwareThread, LockAwareThreadState> threadSet = new ConcurrentHashMap<>();
++    private Object waitPoint = new Object();
++
++    public enum LockAwareThreadState {
++        PARK,
++        RUN,
++        BLOCK
++    }
++
++    public class LockAwareThread extends Thread {
++
++        @Override
++        public void run() {
++            while (!isShutdown()) {
++                LockAwareThreadState state = threadSet.get(this);
++                if (state == LockAwareThreadState.BLOCK) {
++                    //SHOULDN'T BE HERE SOMETHING FRACKED UP
++                    threadSet.put(this, state = LockAwareThreadState.PARK);
++                    blockedThreads.decrementAndGet();
++                }
++                if (state == LockAwareThreadState.PARK) {
++                    try {
++                        synchronized (waitPoint) {
++                            waitPoint.wait();
++                        }
++                    } catch (InterruptedException ie) {
++                        //Don't care we like interupts
++                    }
++                }
++                if (state == LockAwareThreadState.RUN) {
++                    Runnable task = taskQueue.getFirst();
++                    task.run();
++                }
++            }
++        }
++
++    }
++
++
++    @Override
++    public void shutdown() {
++        isShutdown = true;
++    }
++
++    @Override
++    public List<Runnable> shutdownNow() {
++        // Prevent any new tasks from being fetched
++        shutdown();
++        // Get all tasks from task queue that haven't been executed yet
++        List<Runnable> out =  new ArrayList<Runnable>(taskQueue);
++        // Empty task queue
++        taskQueue.clear();
++        // Return result
++        return out;
++    }
++
++    @Override
++    public boolean isShutdown() {
++        return isShutdown;
++    }
++
++    @Override
++    public boolean isTerminated() {
++        return taskQueue.isEmpty();
++    }
++
++    @Override
++    public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
++        long waitnanos = unit.toNanos(timeout);
++        long deadline = System.nanoTime() + waitnanos;
++        while (System.nanoTime() < deadline) {
++            if (isTerminated()) return true;
++            LockSupport.parkUntil(deadline);
++        }
++        return false;
++    }
++
++    @Override
++    public void execute(Runnable command) {
++        taskQueue.add(command);
++    }
++
++}
+\ No newline at end of file
+diff --git a/src/main/java/net/minecraft/server/level/ServerChunkCache.java b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+index 74fa8727916022bccf0bf454baae8018614f4487..842111b368f2cc8ad0810bb014490424319f1e38 100644
+--- a/src/main/java/net/minecraft/server/level/ServerChunkCache.java
++++ b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+@@ -14,6 +14,8 @@ import java.util.function.BooleanSupplier;
+ import java.util.function.Consumer;
+ import java.util.function.Supplier;
+ import javax.annotation.Nullable;
++
++import net.himeki.mcmtfabric.DebugHookTerminator;
+ import net.minecraft.Util;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.SectionPos;
+@@ -447,7 +449,7 @@ public class ServerChunkCache extends ChunkSource {
+                 // Paper end
+                 com.destroystokyo.paper.io.SyncLoadFinder.logSyncLoad(this.level, x1, z1); // Paper - sync load info
+                 //this.level.timings.syncChunkLoad.startTiming(); // Paper // Purpur
+-                chunkproviderserver_b.managedBlock(completablefuture::isDone);
++                DebugHookTerminator.chunkLoadDrive(this.mainThreadProcessor,completablefuture::isDone,this,completablefuture,k);
+                 io.papermc.paper.chunk.system.scheduling.ChunkTaskScheduler.popChunkWait(); // Paper - async chunk debug  // Paper - rewrite chunk system
+                 //this.level.timings.syncChunkLoad.stopTiming(); // Paper // Purpur
+             } // Paper
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 2d14b888554f51455aa55471b36b369d3e10a1a3..e211374d782401a0e3387e707a10fc820139e1e0 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -18,6 +18,7 @@ import it.unimi.dsi.fastutil.objects.Object2IntMap.Entry;
+ import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
+ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+ import it.unimi.dsi.fastutil.objects.ObjectIterator;
++import net.himeki.mcmtfabric.parallelised.ParaServerChunkProvider;
+ import net.minecraft.CrashReport;
+ import net.minecraft.Util;
+ import net.minecraft.core.*;
+@@ -542,9 +543,9 @@ public class ServerLevel extends Level implements WorldGenLevel {
+         //PersistentEntitySectionManager persistententitysectionmanager = this.entityManager; // Paper - rewrite chunk system
+ 
+         //Objects.requireNonNull(this.entityManager); // Paper - rewrite chunk system
+-        this.chunkSource = new ServerChunkCache(this, convertable_conversionsession, datafixer, structuretemplatemanager, executor, chunkgenerator, j, k, flag2, worldloadlistener, null, () -> { // Paper - rewrite chunk system
++        this.chunkSource = new ParaServerChunkProvider(this, convertable_conversionsession, datafixer, structuretemplatemanager, executor, chunkgenerator, j, k, flag2, worldloadlistener, null, () -> { // Paper - rewrite chunk system
+             return minecraftserver.overworld().getDataStorage();
+-        });
++        });//Hearse --MCMT Changes
+         this.chunkSource.getGeneratorState().ensureStructuresGenerated();
+         this.portalForcer = new PortalForcer(this);
+         this.updateSkyBrightness();
+diff --git a/src/main/java/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java b/src/main/java/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
+index 4aedee56077159aaf613033b688d2be6833f1ad1..03b21f499e4b58905682980d480604772030097b 100644
+--- a/src/main/java/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
++++ b/src/main/java/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
+@@ -1,13 +1,13 @@
+ package net.minecraft.world.level.redstone;
+ 
+ import com.mojang.logging.LogUtils;
+-import java.util.ArrayDeque;
+-import java.util.ArrayList;
+-import java.util.Deque;
+-import java.util.List;
++
++import java.util.*;
+ import java.util.concurrent.ConcurrentLinkedDeque;
+ import java.util.concurrent.CopyOnWriteArrayList;
+ import javax.annotation.Nullable;
++
++import net.himeki.mcmtfabric.parallelised.ConcurrentDoublyLinkedList;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.world.level.Level;
+@@ -19,8 +19,8 @@ public class CollectingNeighborUpdater implements NeighborUpdater {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private final Level level;
+     private final int maxChainedNeighborUpdates;
+-    private final Deque<NeighborUpdates> stack = new ConcurrentLinkedDeque<>();
+-    private final List<CollectingNeighborUpdater.NeighborUpdates> addedThisLayer = new CopyOnWriteArrayList<>();
++    private final Deque<NeighborUpdates> stack = new ArrayDeque<>();
++    private final List<CollectingNeighborUpdater.NeighborUpdates> addedThisLayer = new ConcurrentDoublyLinkedList<>();
+     private int count = 0;
+ 
+     public CollectingNeighborUpdater(Level world, int maxChainDepth) {
+@@ -29,22 +29,22 @@ public class CollectingNeighborUpdater implements NeighborUpdater {
+     }
+ 
+     @Override
+-    public synchronized void shapeUpdate(Direction direction, BlockState neighborState, BlockPos pos, BlockPos neighborPos, int flags, int maxUpdateDepth) {
++    public void shapeUpdate(Direction direction, BlockState neighborState, BlockPos pos, BlockPos neighborPos, int flags, int maxUpdateDepth) {
+         this.addAndRun(pos, new CollectingNeighborUpdater.ShapeUpdate(direction, neighborState, pos.immutable(), neighborPos.immutable(), flags));
+     }
+ 
+     @Override
+-    public synchronized void neighborChanged(BlockPos pos, Block sourceBlock, BlockPos sourcePos) {
++    public void neighborChanged(BlockPos pos, Block sourceBlock, BlockPos sourcePos) {
+         this.addAndRun(pos, new CollectingNeighborUpdater.SimpleNeighborUpdate(pos, sourceBlock, sourcePos.immutable()));
+     }
+ 
+     @Override
+-    public synchronized void neighborChanged(BlockState state, BlockPos pos, Block sourceBlock, BlockPos sourcePos, boolean notify) {
++    public void neighborChanged(BlockState state, BlockPos pos, Block sourceBlock, BlockPos sourcePos, boolean notify) {
+         this.addAndRun(pos, new CollectingNeighborUpdater.FullNeighborUpdate(state, pos.immutable(), sourceBlock, sourcePos.immutable(), notify));
+     }
+ 
+     @Override
+-    public synchronized void updateNeighborsAtExceptFromFacing(BlockPos pos, Block sourceBlock, @Nullable Direction except) {
++    public void updateNeighborsAtExceptFromFacing(BlockPos pos, Block sourceBlock, @Nullable Direction except) {
+         this.addAndRun(pos, new CollectingNeighborUpdater.MultiNeighborUpdate(pos.immutable(), sourceBlock, except));
+     }
+ 
+diff --git a/src/main/java/net/minecraft/world/ticks/LevelChunkTicks.java b/src/main/java/net/minecraft/world/ticks/LevelChunkTicks.java
+index abc8efe0cf6cec1a8bf8b39538fc2afa0112c74d..2d9352fd6535e91f1660991e1861757e8bc9fb44 100644
+--- a/src/main/java/net/minecraft/world/ticks/LevelChunkTicks.java
++++ b/src/main/java/net/minecraft/world/ticks/LevelChunkTicks.java
+@@ -13,6 +13,8 @@ import java.util.function.Function;
+ import java.util.function.Predicate;
+ import java.util.stream.Stream;
+ import javax.annotation.Nullable;
++
++import it.unimi.dsi.fastutil.objects.ObjectSets;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.nbt.ListTag;
+ import net.minecraft.world.level.ChunkPos;
+@@ -21,7 +23,7 @@ public class LevelChunkTicks<T> implements SerializableTickContainer<T>, TickCon
+     private final Queue<ScheduledTick<T>> tickQueue = new PriorityQueue<>(ScheduledTick.DRAIN_ORDER);
+     @Nullable
+     private List<SavedTick<T>> pendingTicks;
+-    private final Set<ScheduledTick<?>> ticksPerPosition = new ObjectOpenCustomHashSet<>(ScheduledTick.UNIQUE_TICK_HASH);
++    private final Set<ScheduledTick<?>> ticksPerPosition = ObjectSets.synchronize(new ObjectOpenCustomHashSet<>(ScheduledTick.UNIQUE_TICK_HASH));
+     @Nullable
+     private BiConsumer<LevelChunkTicks<T>, ScheduledTick<T>> onTickAdded;
+ 
+@@ -30,7 +32,9 @@ public class LevelChunkTicks<T> implements SerializableTickContainer<T>, TickCon
+     private long lastSaved = Long.MIN_VALUE;
+ 
+     public synchronized boolean isDirty(final long tick) {
+-        return this.dirty || (!this.tickQueue.isEmpty() && tick != this.lastSaved);
++        synchronized (this.tickQueue){
++            return this.dirty || (!this.tickQueue.isEmpty() && tick != this.lastSaved);
++        }
+     }
+ 
+     public synchronized void clearDirty() {
+@@ -65,7 +69,6 @@ public class LevelChunkTicks<T> implements SerializableTickContainer<T>, TickCon
+             this.dirty = true; // Paper - add dirty flag
+             this.ticksPerPosition.remove(scheduledTick);
+         }
+-
+         return scheduledTick;
+     }
+ 
