@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Sun, 8 Jan 2023 15:01:16 +0800
+Subject: [PATCH] Change a lock in CollectingNeighborUpdater and Fix a CME
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java b/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java
+index 210a0bee1227e4671909dd553ab22027cfc868fb..c9fe09393f1da6687e4950ddb37069a4337e0f5d 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java
++++ b/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java
+@@ -20,8 +20,8 @@ import org.slf4j.Logger;
+ 
+ public class AttributeMap {
+     private static final Logger LOGGER = LogUtils.getLogger();
+-    private final Map<Attribute, AttributeInstance> attributes = Maps.newHashMap();
+-    private final Set<AttributeInstance> dirtyAttributes = Sets.newHashSet();
++    private final Map<Attribute, AttributeInstance> attributes = Maps.newConcurrentMap();
++    private final Set<AttributeInstance> dirtyAttributes = Sets.newConcurrentHashSet();
+     private final AttributeSupplier supplier;
+     private final java.util.function.Function<Attribute, AttributeInstance> createInstance; // Pufferfish
+     private final net.minecraft.world.entity.LivingEntity entity; // Purpur
+diff --git a/src/main/java/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java b/src/main/java/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
+index 03b21f499e4b58905682980d480604772030097b..56a7f13f26f0e160e89baf5e7edd1bdf1c5bf77e 100644
+--- a/src/main/java/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
++++ b/src/main/java/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
+@@ -5,6 +5,8 @@ import com.mojang.logging.LogUtils;
+ import java.util.*;
+ import java.util.concurrent.ConcurrentLinkedDeque;
+ import java.util.concurrent.CopyOnWriteArrayList;
++import java.util.concurrent.locks.Lock;
++import java.util.concurrent.locks.ReentrantLock;
+ import javax.annotation.Nullable;
+ 
+ import net.himeki.mcmtfabric.parallelised.ConcurrentDoublyLinkedList;
+@@ -23,6 +25,8 @@ public class CollectingNeighborUpdater implements NeighborUpdater {
+     private final List<CollectingNeighborUpdater.NeighborUpdates> addedThisLayer = new ConcurrentDoublyLinkedList<>();
+     private int count = 0;
+ 
++    private final Lock runLock = new ReentrantLock(false);
++
+     public CollectingNeighborUpdater(Level world, int maxChainDepth) {
+         this.level = world;
+         this.maxChainedNeighborUpdates = maxChainDepth;
+@@ -69,28 +73,34 @@ public class CollectingNeighborUpdater implements NeighborUpdater {
+     }
+ 
+     private void runUpdates() {
++        if (!this.runLock.tryLock()){
++            return;
++        }
+         try {
+-            while(!this.stack.isEmpty() || !this.addedThisLayer.isEmpty()) {
+-                for(int i = this.addedThisLayer.size() - 1; i >= 0; --i) {
+-                    this.stack.push(this.addedThisLayer.get(i));
+-                }
++            try {
++                while(!this.stack.isEmpty() || !this.addedThisLayer.isEmpty()) {
++                    for(int i = this.addedThisLayer.size() - 1; i >= 0; --i) {
++                        this.stack.push(this.addedThisLayer.get(i));
++                    }
+ 
+-                this.addedThisLayer.clear();
+-                CollectingNeighborUpdater.NeighborUpdates neighborUpdates = this.stack.peek();
++                    this.addedThisLayer.clear();
++                    CollectingNeighborUpdater.NeighborUpdates neighborUpdates = this.stack.peek();
+ 
+-                while(this.addedThisLayer.isEmpty()) {
+-                    if (!neighborUpdates.runNext(this.level)) {
+-                        this.stack.pop();
+-                        break;
++                    while(this.addedThisLayer.isEmpty()) {
++                        if (!neighborUpdates.runNext(this.level)) {
++                            this.stack.pop();
++                            break;
++                        }
+                     }
+                 }
++            } finally {
++                this.stack.clear();
++                this.addedThisLayer.clear();
++                this.count = 0;
+             }
+-        } finally {
+-            this.stack.clear();
+-            this.addedThisLayer.clear();
+-            this.count = 0;
++        }finally {
++            this.runLock.unlock();
+         }
+-
+     }
+ 
+     static record FullNeighborUpdate(BlockState state, BlockPos pos, Block block, BlockPos neighborPos, boolean movedByPiston) implements CollectingNeighborUpdater.NeighborUpdates {
