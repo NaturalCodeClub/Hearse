@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Sun, 15 Jan 2023 09:58:00 +0800
+Subject: [PATCH] Misc changes
+
+
+diff --git a/src/main/java/net/minecraft/CrashReport.java b/src/main/java/net/minecraft/CrashReport.java
+index b5b6657e52e4f7a630229bd3ba433438af293e22..7860b059a9d374ab11e0bbd77fb555e8ba57d457 100644
+--- a/src/main/java/net/minecraft/CrashReport.java
++++ b/src/main/java/net/minecraft/CrashReport.java
+@@ -125,7 +125,7 @@ public class CrashReport {
+         stringbuilder.append("---- Minecraft Crash Report ----\n");
+         // Purpur start
+         stringbuilder.append("// ");
+-        stringbuilder.append("// DO NOT REPORT THIS TO PAPER! REPORT TO PURPUR INSTEAD!");
++        stringbuilder.append("// DO NOT REPORT THIS TO PAPER or PURPUR! REPORT TO HEARSE INSTEAD!");
+         // Purpur end
+         stringbuilder.append("// ");
+         stringbuilder.append(CrashReport.getErrorComment());
+diff --git a/src/main/java/org/bukkit/craftbukkit/event/CraftEventFactory.java b/src/main/java/org/bukkit/craftbukkit/event/CraftEventFactory.java
+index 2d49774f195c2f72004319b2e35763c7071969f1..f1bb82e2655f7cb100a44fcda0cb1cbad566008e 100644
+--- a/src/main/java/org/bukkit/craftbukkit/event/CraftEventFactory.java
++++ b/src/main/java/org/bukkit/craftbukkit/event/CraftEventFactory.java
+@@ -57,6 +57,7 @@ import net.minecraft.world.phys.BlockHitResult;
+ import net.minecraft.world.phys.EntityHitResult;
+ import net.minecraft.world.phys.HitResult;
+ import net.minecraft.world.phys.Vec3;
++import org.apache.logging.log4j.LogManager;
+ import org.bukkit.Bukkit;
+ import org.bukkit.Location; // Paper
+ import org.bukkit.Material;
+@@ -229,7 +230,7 @@ public class CraftEventFactory {
+     public static final DamageSource MELTING = CraftDamageSource.copyOf(DamageSource.ON_FIRE);
+     public static final DamageSource POISON = CraftDamageSource.copyOf(DamageSource.MAGIC);
+     public static org.bukkit.block.Block blockDamage; // For use in EntityDamageByBlockEvent
+-    public static Entity entityDamage; // For use in EntityDamageByEntityEvent
++    public static volatile Entity entityDamage; // For use in EntityDamageByEntityEvent
+ 
+     // helper methods
+     private static boolean canBuild(ServerLevel world, Player player, int x, int z) {
+@@ -1092,7 +1093,8 @@ public class CraftEventFactory {
+             } else if (source == DamageSource.MAGIC) {
+                 cause = DamageCause.MAGIC;
+             } else {
+-                throw new IllegalStateException(String.format("Unhandled damage of %s by %s from %s", entity, damager.getHandle(), source.msgId));
++                LogManager.getLogger().error(String.format("Unhandled damage of %s by %s from %s", entity, damager.getHandle(), source.msgId));
++                cause = DamageCause.CUSTOM;
+             }
+             EntityDamageEvent event = new EntityDamageByEntityEvent(damager, entity.getBukkitEntity(), cause, modifiers, modifierFunctions, source.isCritical()); // Paper - add critical damage API
+             event.setCancelled(cancelled);
