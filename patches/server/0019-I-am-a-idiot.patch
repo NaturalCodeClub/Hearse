@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Mon, 16 Jan 2023 20:01:38 +0800
+Subject: [PATCH] I am a idiot
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/event/CraftEventFactory.java b/src/main/java/org/bukkit/craftbukkit/event/CraftEventFactory.java
+index 61545228afc97194734944e706f9fb8a913a4c6e..db9206f61055329dbe89b87efdb90ae863222b8a 100644
+--- a/src/main/java/org/bukkit/craftbukkit/event/CraftEventFactory.java
++++ b/src/main/java/org/bukkit/craftbukkit/event/CraftEventFactory.java
+@@ -1146,10 +1146,10 @@ public class CraftEventFactory {
+         }
+ 
+         if (cause == null) {
++            LogManager.getLogger().warn(String.format("Unhandled damage of %s from %s", entity, source.msgId));
+             cause = DamageCause.CUSTOM;
+         }
+-
+-        LogManager.getLogger().warn(String.format("Unhandled damage of %s from %s", entity, source.msgId));
++        
+         return CraftEventFactory.callEntityDamageEvent(null, entity, cause, modifiers, modifierFunctions, cancelled, source.isCritical()); // Paper - add critical damage API
+     }
+ 
