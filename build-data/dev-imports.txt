@@ -18,3 +18,4 @@ minecraft net/minecraft/world/level/lighting/DynamicGraphMinFixedPoint.java
 minecraft net/minecraft/world/level/gameevent/EuclideanGameEventListenerRegistry.java
 minecraft net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos.java
 minecraft net/minecraft/world/entity/ai/sensing/NearestLivingEntitySensor.java
+minecraft net/minecraft/world/entity/ai/memory/NearestVisibleLivingEntities.java
