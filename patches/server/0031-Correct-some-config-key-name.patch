@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Wed, 18 Jan 2023 20:32:12 +0800
+Subject: [PATCH] Correct some config key name
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 191298dd8ed576d86b355fb546bd91fb1ca6cbb6..513cff45026141be40665e5feacef7c9a060d4ba 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1208,7 +1208,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         if (!isInited.get()){
+             enabled.set(HearseConfig.getBoolean("optimizations.enable-multithreaded-tracker",true));
+             if (enabled.get()){
+-                final int threadCount = HearseConfig.getInt("optimizations.multithreaded-tracker-thread-count",Runtime.getRuntime().availableProcessors());
++                final int threadCount = HearseConfig.getInt("workers.multithreaded-tracker-thread-count",Runtime.getRuntime().availableProcessors());
+                 concurrentTrackWorker = new WorkerThreadPoolExecutor(
+                         threadCount,
+                         threadCount,
