@@ -1,0 +1,77 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wangxyper <wangxyper@163.com>
+Date: Tue, 24 Jan 2023 09:32:37 +0800
+Subject: [PATCH] Fix some threading issue in bukkit event system
+
+
+diff --git a/src/main/java/org/bukkit/Server.java b/src/main/java/org/bukkit/Server.java
+index e0f69edf603c2ec99bc92b16b18912272cc41bd9..efbfcc009e3d9faf4c8093801d9f1999c063494d 100644
+--- a/src/main/java/org/bukkit/Server.java
++++ b/src/main/java/org/bukkit/Server.java
+@@ -1489,6 +1489,12 @@ public interface Server extends PluginMessageRecipient, net.kyori.adventure.audi
+      */
+     boolean isPrimaryThread();
+ 
++    //Hearse start
++    /**
++     * Get current thread is worker or other
++     */
++    boolean isWorkerThread();
++
+     // Paper start
+     /**
+      * Gets the message that is displayed on the server list.
+diff --git a/src/main/java/org/bukkit/plugin/SimplePluginManager.java b/src/main/java/org/bukkit/plugin/SimplePluginManager.java
+index 75be5cdfeb30732975bbc38dc7aab52a0cdead9c..65af81c4d6e3fe0764f6efaedc3e333469a94aa3 100644
+--- a/src/main/java/org/bukkit/plugin/SimplePluginManager.java
++++ b/src/main/java/org/bukkit/plugin/SimplePluginManager.java
+@@ -652,8 +652,11 @@ public final class SimplePluginManager implements PluginManager {
+             defaultPerms.get(false).clear();
+         }
+     }
++
+     private void fireEvent(Event event) { callEvent(event); } // Paper - support old method incase plugin uses reflection
+ 
++    private final Object eventLock = new Object();//Hearse ensure event system thread safe
++
+     /**
+      * Calls an event with the given details.
+      *
+@@ -668,6 +671,20 @@ public final class SimplePluginManager implements PluginManager {
+             throw new IllegalStateException(event.getEventName() + " may only be triggered synchronously.");
+         }
+ 
++        //Hearse start
++        if (server.isWorkerThread()){
++            synchronized (this.eventLock){
++                this.fireCallEvent(event);
++            }
++            return;
++        }
++
++        this.fireCallEvent(event);
++        //Hearse end
++    }
++
++    //Hearse start - split to a new method
++    private void fireCallEvent(Event event){
+         HandlerList handlers = event.getHandlers();
+         RegisteredListener[] listeners = handlers.getRegisteredListeners();
+ 
+@@ -689,7 +706,7 @@ public final class SimplePluginManager implements PluginManager {
+                             plugin.getDescription().getAuthors(),
+                             plugin.getDescription().getFullName(),
+                             ex.getMessage()
+-                            ));
++                    ));
+                 }
+             } catch (Throwable ex) {
+                 gg.pufferfish.pufferfish.sentry.SentryContext.setEventContext(event, registration); // Pufferfish
+@@ -704,6 +721,7 @@ public final class SimplePluginManager implements PluginManager {
+             }
+         }
+     }
++    //Hearse end
+ 
+     @Override
+     public void registerEvents(@NotNull Listener listener, @NotNull Plugin plugin) {
