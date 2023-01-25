@@ -53,3 +53,5 @@ Credits:
 
 ## Attention
 This is just a joke, do not use it in a production environment
+
+And the project on this repo won't update.You can get the latest version on the new repo : https://github.com/Era4FunMC/Hearse
